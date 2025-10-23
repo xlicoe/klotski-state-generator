@@ -1,1 +1,1 @@
-This is a klotski state generator for computational ENR 145.
+This is a Klotski state space tutorial for computational ENR 145.
