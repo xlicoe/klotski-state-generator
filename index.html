@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!--
     Date: October 22, 2025
-    Prompt Coded with Gemini 2.5 Pro
-
+    This code is generated with Gemini 2.5 Pro through multiple prompts and attempts.
+    
     Iteration Log:
     - v1.0: Initial 6x6 grid layout
     - v2.0: Added block palette and placement
@@ -22,12 +22,19 @@
     - v14.0: Updated state ID format to "blk122blk201" (no space between blocks)
     - v15.0: Updated CSV export to place neighbors in separate columns
     - v16.0: Changed grid size to 4x5
+    - v17.0: Removed 2x2 block for a simpler "basics" version
+    - v18.0: Fixed 1x1 block "jump" logic (must jump over occupied space)
+    - v18.1: (Bugfix) Removed stray text causing SyntaxError
+    - v19.0: Added random direction to auto-rotation
+    - v20.0: Title and Header comment updates
+    - v21.0: Color-coded graph nodes by neighbor count (degree)
+    - v21.1: Fixed node outlines in graph (stroke: #333)
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klotski State Space Demo</title>
+    <title>Klotski State Space Tutorial</title>
     <!-- Add D3.js library -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
@@ -230,7 +237,7 @@
 <body>
     <div id="main-container">
         <div id="designer-container">
-            <h1>Klotski State Space Demo</h1>
+            <h1>Klotski State Space Tutorial</h1>
             <div id="info-panel">
                 <p id="designer-instructions">Click a shape, then click on the grid to place it. Right-click to remove.</p>
                 <p id="game-instructions" style="display: none;">Click a block, then use WASD/Arrow Keys.</p>
@@ -307,11 +314,11 @@
 
         // --- Constants ---
         const GRID_SIZE = 80;
-        const COLS = 4; // Was 6
-        const ROWS = 5; // Was 6
+        const COLS = 4;
+        const ROWS = 5;
         const LINE_COLOR = '#cccccc';
         const blockTypes = [
-            { id: 1, w: 2, h: 2, color: 'hsl(0, 84%, 60%)' },  // Red 2x2
+            // { id: 1, w: 2, h: 2, color: 'hsl(0, 84%, 60%)' },  // Red 2x2 (REMOVED for basics)
             { id: 2, w: 1, h: 2, color: 'hsl(220, 90%, 60%)' }, // Blue 1x2 (Vertical)
             { id: 3, w: 2, h: 1, color: 'hsl(145, 63%, 49%)' }, // Green 2x1 (Horizontal)
             { id: 4, w: 1, h: 1, color: 'hsl(45, 93%, 47%)' },  // Yellow 1x1
@@ -466,11 +473,11 @@
                     let moved = false;
                     
                     if (newBlock.id === 4) { // 1x1 block
-                        // Try 2-space move
+                        // Try 2-space move (JUMP)
                         const iX = newBlock.x + dx, iY = newBlock.y + dy, tX = newBlock.x + dx * 2, tY = newBlock.y + dy * 2;
                         if (tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
-                            !isOccupied(newBlocks, iX, iY, newBlock, newBlock) && 
-                            !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) {
+                            isOccupied(newBlocks, iX, iY, newBlock, newBlock) &&  // <-- FIX: Check if intermediate is OCCUPIED
+                            !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) { // <-- Check if target is EMPTY
                             newBlock.x = tX; newBlock.y = tY; moved = true;
                         } else {
                             // Try 1-space move
@@ -480,7 +487,7 @@
                                 newBlock.x = tX1; newBlock.y = tY1; moved = true;
                             }
                         }
-                    } else if (newBlock.id === 1 || newBlock.id === 2 || newBlock.id === 3) { // 2x2, 1x2, 2x1 blocks
+                    } else if (newBlock.id === 2 || newBlock.id === 3) { // 1x2, 2x1 blocks
                         // 1-space move
                         // Restrict 1x2 and 2x1 blocks
                         if ((newBlock.id === 3 && dy !== 0) || (newBlock.id === 2 && dx !== 0)) continue;
@@ -536,7 +543,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", "state_graph.csv");
+            link.setAttribute("download", "klotski_state_graph.csv");
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
@@ -568,11 +575,11 @@
             const blockToMove = tempBlocks[blockIndex];
 
             if (blockToMove.id === 4) { // 1x1 block
-                // Try 2-space move
+                // Try 2-space move (JUMP)
                 const iX = blockToMove.x + dx, iY = blockToMove.y + dy, tX = blockToMove.x + dx*2, tY = blockToMove.y+dy*2;
                  if(tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
-                    !isOccupied(boardBlocks, iX, iY, boardBlocks[blockIndex], boardBlocks[blockIndex]) && 
-                    !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) {
+                    isOccupied(boardBlocks, iX, iY, boardBlocks[blockIndex], boardBlocks[blockIndex]) &&  // <-- FIX: Check if intermediate is OCCUPIED
+                    !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) { // <-- Check if target is EMPTY
                      boardBlocks[blockIndex].x = tX; boardBlocks[blockIndex].y = tY; moved = true;
                  } else {
                     // Try 1-space move
@@ -582,7 +589,7 @@
                          boardBlocks[blockIndex].x = tX1; boardBlocks[blockIndex].y = tY1; moved = true;
                     }
                  }
-            } else if (blockToMove.id === 1 || blockToMove.id === 2 || blockToMove.id === 3) { // 2x2, 1x2, 2x1 blocks
+            } else if (blockToMove.id === 2 || blockToMove.id === 3) { // 1x2, 2x1 blocks
                 // 1-space move
                 // Restrict 1x2 and 2x1 blocks
                 if ((blockToMove.id === 3 && dy !== 0) || (blockToMove.id === 2 && dx !== 0)) return;
@@ -672,7 +679,7 @@
 
                         const id = parseInt(idChar);
                         const x = parseInt(posPart[0]);
-                        const y = parseInt(posPart[1]);
+                        const y = parseInt(posPart[1]); // <-- FIX: Was posPArt
                         
                         const blockType = blockTypes.find(t => t.id === id);
                         if (!blockType || isNaN(x) || isNaN(y)) {
@@ -772,13 +779,36 @@
         });
         
         function drawStateGraph() {
-            const nodes = Array.from(stateGraph.keys()).map(id => ({ id }));
+            // 1. Prepare data for D3
+            const nodes = Array.from(stateGraph.keys()).map(id => {
+                const neighbors = stateGraph.get(id)?.neighbors;
+                return { 
+                    id, 
+                    degree: neighbors ? neighbors.size : 0 // Calculate degree (neighbor count)
+                };
+            });
             const links = [];
             stateGraph.forEach((data, source) => {
                 data.neighbors.forEach(target => {
-                    links.push({ source, target });
+                    // Only add links one way to avoid duplicates if graph is undirected
+                    if (source < target) {
+                        links.push({ source, target });
+                    }
                 });
             });
+
+            // 2. Find min/max degree for color scale
+            const minDegree = d3.min(nodes, d => d.degree);
+            const maxDegree = d3.max(nodes, d => d.degree);
+
+            // 3. Create a color scale (e.g., light blue to dark blue)
+            let colorScale;
+            if (minDegree === maxDegree) {
+                // Handle case where all nodes have same degree
+                colorScale = () => d3.interpolateBlues(0.5);
+            } else {
+                colorScale = d3.scaleSequential(d3.interpolateBlues).domain([minDegree, maxDegree]);
+            }
 
             const svg = d3.select("#graph-svg");
             svg.selectAll("*").remove();
@@ -795,10 +825,12 @@
             const link = g.append("g").attr("stroke", "#999").attr("stroke-opacity", 0.6)
                 .selectAll("line").data(links).join("line").attr("stroke-width", 1.5);
 
-            const node = g.append("g").attr("stroke", "#fff").attr("stroke-width", 1.5)
-                .selectAll("circle").data(nodes).join("circle").attr("r", 8).attr("fill", "#007bff");
+            const node = g.append("g").attr("stroke", "#333").attr("stroke-width", 1.5) // <-- FIX: Set dark outline
+                .selectAll("circle").data(nodes).join("circle")
+                .attr("r", 8) 
+                .attr("fill", d => colorScale(d.degree)); // <-- Apply color scale
             
-            node.append("title").text(d => d.id);
+            node.append("title").text(d => `${d.id}\nNeighbors: ${d.degree}`); // Add degree to tooltip
             node.call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
 
             simulation.on("tick", () => {
@@ -820,16 +852,18 @@
 
             // --- Auto-Rotation Logic ---
             const toggleRotateBtn = d3.select("#toggle-rotate-btn");
+            let rotationSpeed = 0.05; // Will be set to 0.05 or -0.05
             
             function autoRotateLoop() {
                 if (!isAutoRotating) return; // Stop if flag is false
-                currentGraphRotation = (currentGraphRotation + 0.05) % 360;
+                currentGraphRotation = (currentGraphRotation + rotationSpeed) % 360; // Use the speed variable
                 applyCurrentTransform();
                 rotationAnimationId = requestAnimationFrame(autoRotateLoop);
             }
 
             function startAutoRotate() {
                 isAutoRotating = true;
+                rotationSpeed = Math.random() < 0.5 ? 0.05 : -0.05; // Randomly set direction
                 toggleRotateBtn.classed("active", true).text("Stop Rotate");
                 if (rotationAnimationId) cancelAnimationFrame(rotationAnimationId); // Clear any old loop
                 autoRotateLoop();
@@ -874,7 +908,7 @@
                 if (!event.active) simulation.alphaTarget(0.3).restart();
                 d.fx = d.x; d.fy = d.y;
             }
-            function dragged(event, d) { d.fx = event.x; d.fy = d.y; }
+            function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
             function dragended(event, d) {
                 if (!event.active) simulation.alphaTarget(0);
                 d.fx = null; d.fy = null;
