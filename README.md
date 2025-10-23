@@ -2,6 +2,7 @@ https://xlicoe.github.io/klotski-state-space-tutorial/
 
 This is a Klotski state space tutorial for computational ENR 145 at Coe.
 
+
 Background info:
 
 https://en.wikipedia.org/wiki/Klotski
