@@ -10,7 +10,7 @@ https://en.wikipedia.org/wiki/Klotski
 
 Klotski (from Polish: klocki, lit. 'wooden blocks') is a sliding block puzzle. The blocks are sliding inside a frame, and typically, there's a special one to be moved to the designated location.
 
-!{graphs/Klotski_rules.png}
+!(https://github.com/xlicoe/klotski-state-space-tutorial/blob/main/graphs/Klotski_rules.png)
 
 In this tutorial, we are interested in visualizing the "state space", where all the possible moves are connected to their neighboring moves to show dimensional patterns or structures.
 
