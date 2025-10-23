@@ -3,7 +3,7 @@
     Date: October 22, 2025
     This code is generated with Gemini 2.5 Pro through multiple prompts and attempts.
     
-    Iteration Log:
+  Iteration Log:
     - v1.0: Initial 6x6 grid layout
     - v2.0: Added block palette and placement
     - v3.0: Implemented game mode with WASD/Arrow key movement
@@ -29,12 +29,23 @@
     - v20.0: Title and Header comment updates
     - v21.0: Color-coded graph nodes by neighbor count (degree)
     - v21.1: Fixed node outlines in graph (stroke: #333)
+    - v21.2: (Bugfix) Fixed typo 'posPArt' to 'posPart'
+    - v22.0: Moved state panel, re-ordered buttons, updated button logic
+    - v23.0: Centered and enlarged "State Space" title, moved panel below main title
+    - v24.0: Moved state panel to the left column
+    - v25.0: Fixed layout wrapping issue, moved Title to top of page
+    - v26.0: Swapped left/right columns, added "Building Blocks" title
+    - v26.1: Adjusted "Building Blocks" title spacing
+    - v27.0: Added "set board from state" interactivity
+    - v28.0: Added floating info window in graph, click node to set board
+    - v28.1: Moved graph info window to top-left corner
+    - v29.0: Changed graph arrow key behavior to navigate neighbor nodes
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klotski State Space Tutorial</title>
+    <title>Klotski State Space Tutorial v2</title>
     <!-- Add D3.js library -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
@@ -44,14 +55,24 @@
             background-color: #f0f0f0;
             font-family: sans-serif;
             display: flex;
-            justify-content: center;
+            flex-direction: column; /* Main layout is now top-to-bottom */
+            align-items: center; /* Center all content */
         }
+        
+        #title-container {
+            text-align: center;
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 20px;
+        }
+
         #main-container {
             display: flex;
-            flex-flow: row wrap;
+            flex-flow: row wrap; /* Row flow for panels */
             justify-content: center;
-            align-items: flex-start;
+            align-items: flex-start; /* Align columns to top */
             gap: 30px;
+            width: 100%;
         }
         #designer-container {
             display: flex;
@@ -70,6 +91,7 @@
             padding: 10px;
             background-color: #e9e9e9;
             border-radius: 8px;
+            border: 1px solid #ccc; /* Added border for better outline */
         }
         .palette-block { cursor: pointer; border: 2px solid transparent; box-sizing: border-box; }
         .palette-block.selected { border: 2px solid #007bff; border-radius: 4px; }
@@ -118,12 +140,20 @@
         button:disabled:hover { background-color: #6c757d; }
 
         #state-space-container {
-            width: 500px; /* Widen container for two lists */
+            width: 400px; /* Adjusted width */
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 8px;
             background-color: #f8f9fa;
         }
+        
+        #state-space-container h3 {
+            font-size: 1.5em; /* Larger font size */
+            text-align: center; /* Centered */
+            margin: 0 0 10px 0;
+        }
+
+
         #state-list-wrapper { /* New wrapper for flex layout */
             display: flex;
             gap: 10px;
@@ -136,7 +166,7 @@
             display: none; /* Hide neighbor list by default */
         }
         #state-list, #neighbor-list {
-            height: 400px;
+            height: 300px; /* Adjusted height */
             overflow-y: auto;
             background-color: #fff;
             padding: 8px;
@@ -190,6 +220,36 @@
             height: 100%; 
             outline: none; /* Remove focus ring */
         }
+        /* New selected node style */
+        #graph-svg .node.selected {
+            stroke: #e63946; /* A bright red */
+            stroke-width: 4px;
+        }
+        /* New floating tooltip style */
+        #graph-infobox {
+            position: absolute;
+            top: 20px;
+            left: 20px; /* <-- Moved to top left (was right: 20px) */
+            z-index: 10;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        #mini-board-canvas {
+            background-color: #fff;
+            border: 1px solid #999;
+            display: block; /* Remove any extra spacing */
+        }
+        #mini-board-id {
+            font-family: monospace;
+            font-size: 10px;
+            word-break: break-all;
+            margin: 5px 0 0 0;
+            max-width: 80px; /* 4 * 20px */
+        }
         /* On-Screen Rotate Buttons */
         #rotate-controls {
             position: absolute;
@@ -235,13 +295,20 @@
     </style>
 </head>
 <body>
+    <!-- Title and Info Panel are now at the top of the page -->
+    <div id="title-container">
+        <h1>Klotski State Space Tutorial v2</h1>
+        <div id="info-panel">
+            <p id="designer-instructions">Click a shape, then click on the grid to place it. Right-click to remove.</p>
+            <p id="game-instructions" style="display: none;">Click a block, then use WASD/Arrow Keys.</p>
+        </div>
+    </div>
+
+    <!-- Main container holds the two columns -->
     <div id="main-container">
+        <!-- Designer Container (Left Column) -->
         <div id="designer-container">
-            <h1>Klotski State Space Tutorial</h1>
-            <div id="info-panel">
-                <p id="designer-instructions">Click a shape, then click on the grid to place it. Right-click to remove.</p>
-                <p id="game-instructions" style="display: none;">Click a block, then use WASD/Arrow Keys.</p>
-            </div>
+            <h4 style="margin: 10px 0 2px 0; text-align: center;">Building Blocks</h4> <!-- Adjusted bottom margin -->
             <div id="palette-container"></div>
             <canvas id="gridCanvas" tabindex="0"></canvas>
             <div id="controls">
@@ -249,10 +316,11 @@
                 <button id="playButton" disabled>Play</button>
             </div>
         </div>
-
+        
+        <!-- State Space Panel (Right Column) -->
         <div id="state-space-container">
             <h3>State Space</h3>
-            <p>Unique states found: <span id="state-count">0</span></p>
+            <p style="text-align: center;">Unique states found: <span id="state-count">0</span></p>
             <!-- New wrapper for the two lists -->
             <div id="state-list-wrapper">
                 <div id="state-list-container">
@@ -267,18 +335,25 @@
             <!-- Wrapper for buttons -->
             <div id="state-buttons-wrapper" style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
                 <button id="findAllStatesButton" disabled>Find All States</button>
-                <button id="toggleNeighborsButton" disabled>Show Neighbors</button>
                 <button id="visualizeButton" disabled>Visualize Graph</button>
                 <button id="exportCsvButton" disabled>Export to CSV</button>
+                <button id="toggleNeighborsButton" disabled>Show Neighbors</button>
                 <button id="clearStatesButton" disabled>Clear States</button>
             </div>
         </div>
+
     </div>
     
     <!-- Graph Visualization Modal -->
     <div id="graph-modal">
         <div id="graph-container">
             <span id="close-modal">&times;</span>
+            <!-- New Info Box with Mini-Canvas -->
+            <div id="graph-infobox">
+                <h5 style="margin: 0 0 5px 0;">Selected State</h5>
+                <canvas id="mini-board-canvas"></canvas>
+                <p id="mini-board-id">Click a node</p>
+            </div>
             <svg id="graph-svg" tabindex="0"></svg> <!-- Make SVG focusable -->
             <!-- Add new rotate buttons -->
             <div id="rotate-controls">
@@ -311,9 +386,14 @@
         const graphModal = document.getElementById('graph-modal');
         const closeModal = document.getElementById('close-modal');
         const graphSvg = document.getElementById('graph-svg');
+        // New mini-board elements
+        const miniBoardCanvas = document.getElementById('mini-board-canvas');
+        const miniBoardCtx = miniBoardCanvas.getContext('2d');
+        const miniBoardIdEl = document.getElementById('mini-board-id');
 
         // --- Constants ---
         const GRID_SIZE = 80;
+        const MINI_GRID_SIZE = 20; // New constant for mini-board
         const COLS = 4;
         const ROWS = 5;
         const LINE_COLOR = '#cccccc';
@@ -336,6 +416,7 @@
         let isAutoRotating = false;
         let neighborsVisible = false;
         let stopExploration = false; // Flag to stop the "Find All States" loop
+        let allStatesFound = false; // New flag to track if exploration completed
 
         canvas.width = COLS * GRID_SIZE;
         canvas.height = ROWS * GRID_SIZE;
@@ -343,13 +424,18 @@
         function updateButtonStates() {
             const hasBlocks = boardBlocks.length > 0;
             const hasGraph = stateGraph.size > 0;
+            
             playButton.disabled = !hasBlocks || stopExploration; // Disable play if exploring
             findAllStatesButton.disabled = !isGameMode;
-            visualizeButton.disabled = !hasGraph || stopExploration;
-            exportCsvButton.disabled = !hasGraph || stopExploration;
+            clearButton.disabled = isGameMode || stopExploration;
+            
+            // These buttons require the full graph to be generated
+            visualizeButton.disabled = !allStatesFound || stopExploration;
+            exportCsvButton.disabled = !allStatesFound || stopExploration;
+
+            // These buttons can work as long as any graph exists
             toggleNeighborsButton.disabled = !hasGraph || stopExploration;
             clearStatesButton.disabled = !hasGraph || stopExploration;
-            clearButton.disabled = isGameMode || stopExploration;
         }
         
         // --- Drawing ---
@@ -409,7 +495,13 @@
                 if (state === highlightedState) stateDiv.classList.add('highlighted');
                 else if (neighbors && neighbors.has(state)) stateDiv.classList.add('neighbor');
                 stateDiv.textContent = state;
-                stateDiv.addEventListener('click', () => { highlightedState = state; updateStateDisplay(); });
+                stateDiv.addEventListener('click', () => { 
+                    highlightedState = state; 
+                    if (isGameMode) {
+                        setBoardFromState(state); // Update the board
+                    }
+                    updateStateDisplay(); 
+                });
                 stateListEl.appendChild(stateDiv);
             });
 
@@ -422,6 +514,9 @@
                 // Add click event to jump to this state
                 stateDiv.addEventListener('click', () => { 
                     highlightedState = neighborState; 
+                    if (isGameMode) {
+                        setBoardFromState(neighborState); // Update the board
+                    }
                     updateStateDisplay(); 
                 });
                 neighborListEl.appendChild(stateDiv);
@@ -445,6 +540,7 @@
         function clearStateSpace() {
             stateGraph.clear();
             highlightedState = null;
+            allStatesFound = false; // Reset flag
             updateStateDisplay();
             updateButtonStates();
             neighborListEl.innerHTML = ''; // Clear neighbor list
@@ -461,6 +557,139 @@
                 if (!(gridX + newBlock.w <= block.x || gridX >= block.x + block.w || gridY + newBlock.h <= block.y || gridY >= block.y + block.h)) return true;
             }
             return false;
+        }
+
+        // --- New Helper Function to parse state strings ---
+        function parseStateString(stateStr) {
+            const blocks = [];
+            if (!stateStr) return blocks;
+            try {
+                const parts = stateStr.split('blk').filter(p => p.length > 0);
+                for (const part of parts) { // e.g., "200"
+                    const idChar = part[0];
+                    const posPart = part.substring(1); // "00"
+                    
+                    if (posPart.length !== 2) {
+                        console.warn("Skipping malformed part in parseStateString:", part);
+                        continue;
+                    }
+                    
+                    const id = parseInt(idChar);
+                    const x = parseInt(posPart[0]);
+                    const y = parseInt(posPart[1]);
+                    
+                    const blockType = blockTypes.find(t => t.id === id);
+                    if (blockType && !isNaN(x) && !isNaN(y)) {
+                        blocks.push({ ...blockType, x, y });
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing state string:", stateStr, e);
+            }
+            return blocks;
+        }
+
+        // --- New function to draw the mini-board ---
+        function drawMiniBoard(stateStr) {
+            // Set dimensions
+            miniBoardCanvas.width = COLS * MINI_GRID_SIZE;
+            miniBoardCanvas.height = ROWS * MINI_GRID_SIZE;
+            
+            const blocks = parseStateString(stateStr);
+            
+            // 1. Draw grid
+            miniBoardCtx.clearRect(0, 0, miniBoardCanvas.width, miniBoardCanvas.height);
+            miniBoardCtx.strokeStyle = '#ddd'; // Lighter grid
+            miniBoardCtx.lineWidth = 0.5;
+            for (let x = 0; x <= COLS; x++) {
+                const xPos = x * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(xPos, 0);
+                miniBoardCtx.lineTo(xPos, miniBoardCanvas.height);
+                miniBoardCtx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                const yPos = y * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(0, yPos);
+                miniBoardCtx.lineTo(miniBoardCanvas.width, yPos);
+                miniBoardCtx.stroke();
+            }
+            
+            // 2. Draw pillars (smaller)
+            miniBoardCtx.fillStyle = '#ccc';
+            for (let y = 0; y <= ROWS; y++) {
+                for (let x = 0; x <= COLS; x++) {
+                    miniBoardCtx.beginPath();
+                    miniBoardCtx.arc(x * MINI_GRID_SIZE, y * MINI_GRID_SIZE, 1, 0, 2 * Math.PI); // 1px radius
+                    miniBoardCtx.fill();
+                }
+            }
+
+            // 3. Draw blocks
+            blocks.forEach(block => {
+                miniBoardCtx.fillStyle = block.color;
+                miniBoardCtx.fillRect(
+                    block.x * MINI_GRID_SIZE,
+                    block.y * MINI_GRID_SIZE,
+                    block.w * MINI_GRID_SIZE,
+                    block.h * MINI_GRID_SIZE
+                );
+                miniBoardCtx.strokeStyle = '#333';
+                miniBoardCtx.lineWidth = 1;
+                miniBoardCtx.strokeRect(
+                    block.x * MINI_GRID_SIZE,
+                    block.y * MINI_GRID_SIZE,
+                    block.w * MINI_GRID_SIZE,
+                    block.h * MINI_GRID_SIZE
+                );
+            });
+
+            // 4. Update the ID text
+            miniBoardIdEl.textContent = stateStr;
+        }
+
+        // --- New function to clear the mini-board ---
+        function clearMiniBoard() {
+            // Set dimensions
+            miniBoardCanvas.width = COLS * MINI_GRID_SIZE;
+            miniBoardCanvas.height = ROWS * MINI_GRID_SIZE;
+            
+            miniBoardCtx.clearRect(0, 0, miniBoardCanvas.width, miniBoardCanvas.height);
+            miniBoardIdEl.textContent = "Click a node";
+            
+            // Draw default empty grid
+            miniBoardCtx.strokeStyle = '#ddd';
+            miniBoardCtx.lineWidth = 0.5;
+            for (let x = 0; x <= COLS; x++) {
+                const xPos = x * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(xPos, 0);
+                miniBoardCtx.lineTo(xPos, miniBoardCanvas.height);
+                miniBoardCtx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                const yPos = y * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(0, yPos);
+                miniBoardCtx.lineTo(miniBoardCanvas.width, yPos);
+                miniBoardCtx.stroke();
+            }
+        }
+
+
+        // --- New function to set the board from a state string ---
+        function setBoardFromState(stateStr) {
+            if (!stateStr) return;
+            
+            const newBlocks = parseStateString(stateStr); // Use helper
+
+            // Only update if parser was successful
+            if (newBlocks.length > 0 || stateStr === "") {
+                boardBlocks = newBlocks; // Replace the main board
+                selectedGameBlock = null; // Deselect any block
+                redrawCanvas(); // Update the visual board
+            }
         }
 
         function findAllPossibleMoves(blocks) {
@@ -602,10 +831,17 @@
             if (moved) {
                 redrawCanvas();
                 const newState = recordState(boardBlocks);
-                stateGraph.get(newState).neighbors = findAllPossibleMoves(boardBlocks);
-                stateGraph.get(originalState).neighbors.add(newState);
+                // Don't auto-find neighbors, just record the state
+                if (!stateGraph.get(originalState).neighbors.has(newState)) {
+                    // Manually find neighbors for *just these two states*
+                    if (!stateGraph.get(newState).neighbors || stateGraph.get(newState).neighbors.size === 0) {
+                        stateGraph.get(newState).neighbors = findAllPossibleMoves(boardBlocks);
+                    }
+                    stateGraph.get(originalState).neighbors.add(newState);
+                }
                 highlightedState = newState; // Highlight the new state you moved to
                 updateStateDisplay();
+                updateButtonStates(); // Update buttons since graph exists now
             }
         }
 
@@ -615,7 +851,10 @@
             selectedGameBlock = null;
             if (isGameMode) {
                 playButton.textContent = 'Back to Designer'; playButton.classList.add('game-mode');
-                paletteContainer.style.display = 'none'; designerInstructions.style.display = 'none';
+                paletteContainer.style.display = 'none'; 
+                // Hide building blocks title
+                document.querySelector('#designer-container h4').style.display = 'none';
+                designerInstructions.style.display = 'none';
                 gameInstructions.style.display = 'block'; canvas.style.cursor = 'pointer'; canvas.focus();
                 clearStateSpace();
                 const initialState = recordState(boardBlocks);
@@ -624,7 +863,10 @@
                 updateStateDisplay();
             } else {
                 playButton.textContent = 'Play'; playButton.classList.remove('game-mode');
-                paletteContainer.style.display = 'flex'; designerInstructions.style.display = 'block';
+                paletteContainer.style.display = 'flex'; 
+                // Show building blocks title
+                document.querySelector('#designer-container h4').style.display = 'block';
+                designerInstructions.style.display = 'block';
                 gameInstructions.style.display = 'none'; canvas.style.cursor = 'default';
                 selectedPaletteBlock = null;
                 document.querySelectorAll('.palette-block').forEach(b => b.classList.remove('selected'));
@@ -642,12 +884,17 @@
             }
             
             stopExploration = true; // Set flag to allow loop to be stopped
+            allStatesFound = false; // Reset flag
             findAllStatesButton.textContent = 'Stop Exploring';
             findAllStatesButton.classList.add('exploring');
             updateButtonStates(); // Disable other buttons
 
             const queue = [generateStateString(boardBlocks)];
             const visited = new Set(queue);
+            // Ensure the starting state is in the graph
+            if (!stateGraph.has(queue[0])) {
+                recordState(boardBlocks);
+            }
 
             while (queue.length > 0) {
                 if (!stopExploration) break; // Check flag at start of loop
@@ -657,39 +904,11 @@
                 // Safety check for malformed string
                 if (!currentStr || currentStr.trim() === '') continue;
 
-                const currentBlocks = [];
-                try {
-                    // New parser: Split by 'blk' and filter out empty strings
-                    const parts = currentStr.split('blk').filter(p => p.length > 0); // e.g., ["122", "201", "334"]
-                    
-                    for (let i = 0; i < parts.length; i++) { 
-                        const part = parts[i]; // e.g., "122"
-                        
-                        // Reconstruct the full ID part for logging, e.g. "blk122"
-                        const fullPartString = `blk${part}`; 
-                        
-                        // First char is ID, next two are coords
-                        const idChar = part[0];
-                        const posPart = part.substring(1);   // "22"
-                        
-                        if (posPart.length !== 2) {
-                            console.warn("Skipping malformed state part:", fullPartString);
-                            continue; // Safety check
-                        }
-
-                        const id = parseInt(idChar);
-                        const x = parseInt(posPart[0]);
-                        const y = parseInt(posPart[1]); // <-- FIX: Was posPArt
-                        
-                        const blockType = blockTypes.find(t => t.id === id);
-                        if (!blockType || isNaN(x) || isNaN(y)) {
-                            console.warn("Skipping invalid block data:", fullPartString);
-                            continue; // More safety checks
-                        }
-                        currentBlocks.push({ ...blockType, x, y });
-                    }
-                } catch (e) {
-                    console.error("Error parsing state string:", currentStr, e);
+                const currentBlocks = parseStateString(currentStr); // <-- Use new helper
+                
+                // Safety check: if parser fails, it returns empty array
+                if (currentBlocks.length === 0 && currentStr !== "") {
+                    console.warn("Parser returned no blocks for state:", currentStr);
                     continue; // Skip this bad state
                 }
 
@@ -704,6 +923,9 @@
             }
 
             // Exploration finished or was stopped
+            if (stopExploration) { // Only set if loop completed naturally
+                 allStatesFound = true;
+            }
             stopExploration = false;
             findAllStatesButton.textContent = 'Find All States';
             findAllStatesButton.classList.remove('exploring');
@@ -749,13 +971,14 @@
             const gridY = Math.floor((event.clientY - rect.top) / GRID_SIZE);
             if (isGameMode) {
                 selectedGameBlock = boardBlocks.find(b => gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h) || null;
+                redrawCanvas(); // Redraw to show selection
             } else {
                 if (!selectedPaletteBlock || gridX + selectedPaletteBlock.w > COLS || gridY + selectedPaletteBlock.h > ROWS || isOccupied(boardBlocks, gridX, gridY, selectedPaletteBlock, null)) return;
                 boardBlocks.push({ x: gridX, y: gridY, ...selectedPaletteBlock });
                 clearStateSpace();
                 updateButtonStates();
+                redrawCanvas();
             }
-            redrawCanvas();
         });
         canvas.addEventListener('contextmenu', (event) => {
             if (isGameMode) return;
@@ -812,6 +1035,14 @@
 
             const svg = d3.select("#graph-svg");
             svg.selectAll("*").remove();
+            
+            // Clear the mini-board display
+            clearMiniBoard();
+
+            // --- Add state variables for node navigation ---
+            let selectedNodeData = null;
+            let selectedNeighborIndex = 0;
+
             const width = svg.node().getBoundingClientRect().width;
             const height = svg.node().getBoundingClientRect().height;
 
@@ -827,10 +1058,15 @@
 
             const node = g.append("g").attr("stroke", "#333").attr("stroke-width", 1.5) // <-- FIX: Set dark outline
                 .selectAll("circle").data(nodes).join("circle")
+                .attr("class", "node") // Add a class for selection
                 .attr("r", 8) 
                 .attr("fill", d => colorScale(d.degree)); // <-- Apply color scale
             
             node.append("title").text(d => `${d.id}\nNeighbors: ${d.degree}`); // Add degree to tooltip
+            
+            // Add click event to nodes
+            node.on("click", nodeClicked);
+            
             node.call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
 
             simulation.on("tick", () => {
@@ -894,7 +1130,15 @@
             const zoom = d3.zoom()
                 .scaleExtent([0.1, 8]) // Min/max zoom levels
                 .on("zoom", zoomed);
-            svg.call(zoom);
+            
+            // Add background click to clear selection
+            svg.call(zoom)
+               .on("click", () => {
+                    node.classed("selected", false);
+                    clearMiniBoard(); // Clear the mini board on background click
+                    selectedNodeData = null; // Clear selected node data
+                    selectedNeighborIndex = 0;
+               });
 
             function zoomed(event) {
                 stopAutoRotate(); // Stop auto-rotate on manual zoom/pan
@@ -914,16 +1158,65 @@
                 d.fx = null; d.fy = null;
             }
 
+            // --- New Node Click Logic ---
+            function nodeClicked(event, d) {
+                event.stopPropagation(); // Stop click from bubbling up to SVG
+                
+                // 1. Highlight this node in the graph
+                node.classed("selected", false);
+                // Find the actual DOM element corresponding to data 'd'
+                const thisNodeElement = node.filter(nd => nd.id === d.id).node();
+                d3.select(thisNodeElement).classed("selected", true);
+                
+                // 2. Update the floating window
+                drawMiniBoard(d.id);
+
+                // 3. Update the main game board in the background
+                setBoardFromState(d.id);
+                highlightedState = d.id;
+                
+                // 4. Update state for keyboard navigation
+                selectedNodeData = d;
+                selectedNeighborIndex = 0; // Reset neighbor index on new node click
+
+                updateStateDisplay(); // This updates the list *behind* the modal
+            }
+
             // --- Manual Rotation Logic ---
             // Keyboard
             svg.on("keydown", (event) => {
                 event.preventDefault();
-                if (event.key === "ArrowLeft") {
-                    stopAutoRotate();
-                    setRotation(-5); 
-                } else if (event.key === "ArrowRight") {
-                    stopAutoRotate();
-                    setRotation(5);
+                
+                // NEW LOGIC: Navigate neighbors
+                if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                    if (!selectedNodeData) return; // Nothing selected
+                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                    if (neighbors.length === 0) return; // No neighbors
+                    
+                    // Decrement index and wrap around
+                    selectedNeighborIndex = (selectedNeighborIndex - 1 + neighbors.length) % neighbors.length;
+                    const newNeighborId = neighbors[selectedNeighborIndex];
+                    
+                    // Programmatically "click" the new node
+                    const newNodeData = nodes.find(n => n.id === newNeighborId);
+                    if (newNodeData) {
+                        nodeClicked(new Event('synthetic'), newNodeData);
+                    }
+
+                } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                    if (!selectedNodeData) return; // Nothing selected
+                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                    if (neighbors.length === 0) return; // No neighbors
+
+                    // Increment index and wrap around
+                    selectedNeighborIndex = (selectedNeighborIndex + 1) % neighbors.length;
+                    const newNeighborId = neighbors[selectedNeighborIndex];
+                    
+                    // Programmatically "click" the new node
+                    const newNodeData = nodes.find(n => n.id === newNeighborId);
+                    if (newNodeData) {
+                        nodeClicked(new Event('synthetic'), newNodeData);
+                    }
                 }
             });
 
@@ -947,4 +1240,5 @@
     </script>
 </body>
 </html>
+
 
