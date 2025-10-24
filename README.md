@@ -32,7 +32,8 @@ The "Find All States" button will do it automatically.
 
 ### 3) Visualize the state space networks:
 
-All state space has neighbor(s). If we use nodes to represent all the state spaces, and use line to connect them, we will generate a gragh of networks. For a single 1x2 block, it will be just a line.
+All state space has neighbor(s). If we use nodes to represent all the state spaces, and use line to connect them, we will generate a gragh of networks. For a single 1x2 block, the graph looks like a line.
+
 ![](/../main/graphs/state_space_mapping.png)
 ![](/../main/graphs/visual.png)
 
