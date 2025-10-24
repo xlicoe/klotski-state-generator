@@ -14,7 +14,7 @@ Klotski (from Polish: klocki, lit. 'wooden blocks') is a sliding block puzzle.
 
 In this tutorial, we are interested in visualizing the "state space", where all the possible moves are connected to their neighboring moves to show dimensional patterns or structures.
 
-**The goal is to provide a quick demo, allowing students in class to output state space coordinates and create a better 3D visualization on their own.**
+**The goal is to provide a quick demo, allowing students in class to output state space coordinates and create a better 3D visualization on their own. It's also a good starting point to build a universal puzzel solver.**
 
 ## How does this tutorial work:
 
