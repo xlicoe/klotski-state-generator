@@ -37,7 +37,7 @@ All state space has neighbor(s). If we use nodes to represent all the state spac
 ![](/../main/graphs/state_space_mapping.png)
 ![](/../main/graphs/visual.png)
 
-But it sure will get more complicated with more possibilies on the board!
+But it sure will get more complicated with more possible moves on the board!
 ![](/../main/graphs/more_blocks.png)
 ![](/../main/graphs/more_visual.png)
 
