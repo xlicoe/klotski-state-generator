@@ -21,6 +21,7 @@ In this tutorial, we are interested in visualizing the "state space", where all 
 ### 1) Build your block board:
 
 First, pick blocks and put them on the board. Unlike the real game, the blue 1x2 block cannot move horizontally, green not vertically. The yellow one can move in either direction. Once you are done placing the blocks, hit the Play button:
+
 ![](/../main/graphs/block_placing.png)
 
 ### 2) Cover all state space:
