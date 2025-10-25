@@ -3,7 +3,7 @@
     Date: October 22, 2025
     This code is generated with Gemini 2.5 Pro through multiple prompts and attempts.
     
-  Iteration Log:
+    Iteration Log:
     - v1.0: Initial 6x6 grid layout
     - v2.0: Added block palette and placement
     - v3.0: Implemented game mode with WASD/Arrow key movement
@@ -40,12 +40,17 @@
     - v28.0: Added floating info window in graph, click node to set board
     - v28.1: Moved graph info window to top-left corner
     - v29.0: Changed graph arrow key behavior to navigate neighbor nodes
+    - v30.0: (Bugfix) Corrected 1x1 block logic to slide 2 spaces, not jump.
+    - v30.1: (Bugfix) Fixed 'blockJndex' typo
+    - v31.0: Simplified 1x1 block movement to 1 space only.
+    - v32.0: Added unique instance IDs to blocks.
+    - v33.0: Changed state format to ignore instance IDs (e.g., t4x0y0t4x1y1)
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klotski State Space Tutorial v2</title>
+    <title>Klotski State Space Tutorial</title>
     <!-- Add D3.js library -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
@@ -229,7 +234,7 @@
         #graph-infobox {
             position: absolute;
             top: 20px;
-            left: 20px; /* <-- Moved to top left (was right: 20px) */
+            left: 20px; /* <-- Moved to top left */
             z-index: 10;
             background-color: rgba(255, 255, 255, 0.95);
             padding: 10px;
@@ -248,7 +253,7 @@
             font-size: 10px;
             word-break: break-all;
             margin: 5px 0 0 0;
-            max-width: 80px; /* 4 * 20px */
+            max-width: 100px; /* Increased max width */
         }
         /* On-Screen Rotate Buttons */
         #rotate-controls {
@@ -297,7 +302,7 @@
 <body>
     <!-- Title and Info Panel are now at the top of the page -->
     <div id="title-container">
-        <h1>Klotski State Space Tutorial v2</h1>
+        <h1>Klotski State Space Tutorial v3</h1>
         <div id="info-panel">
             <p id="designer-instructions">Click a shape, then click on the grid to place it. Right-click to remove.</p>
             <p id="game-instructions" style="display: none;">Click a block, then use WASD/Arrow Keys.</p>
@@ -405,18 +410,19 @@
         ];
 
         // --- State ---
-        let boardBlocks = [];
+        let boardBlocks = []; // Each block now has { x, y, w, h, id (typeId), color, instanceId }
         let selectedPaletteBlock = null;
-        let selectedGameBlock = null;
+        let selectedGameBlock = null; // Stores the actual block object from boardBlocks
         let isGameMode = false;
-        let stateGraph = new Map();
-        let highlightedState = null;
+        let stateGraph = new Map(); // stateString -> { neighbors: Set<string> }
+        let highlightedState = null; // The state string currently highlighted
         let currentGraphRotation = 0;
         let rotationAnimationId = null;
         let isAutoRotating = false;
         let neighborsVisible = false;
         let stopExploration = false; // Flag to stop the "Find All States" loop
         let allStatesFound = false; // New flag to track if exploration completed
+        let nextBlockInstanceId = 1; // Counter for unique block instance IDs
 
         canvas.width = COLS * GRID_SIZE;
         canvas.height = ROWS * GRID_SIZE;
@@ -473,9 +479,14 @@
 
         // --- State Graph Logic ---
         function generateStateString(blocks) {
-            const sortedBlocks = [...blocks].sort((a, b) => (a.y !== b.y) ? a.y - b.y : a.x - b.x);
-            // New format: "blk" + id + x + y (no space between blocks)
-            return sortedBlocks.map(b => `blk${b.id}${b.x}${b.y}`).join(''); // Changed from .join(' ')
+             // Sort by typeId, then x, then y for canonical representation
+            const sortedBlocks = [...blocks].sort((a, b) => {
+                if (a.id !== b.id) return a.id - b.id; // Sort by typeId
+                if (a.x !== b.x) return a.x - b.x;
+                return a.y - b.y;
+            });
+            // New format: t<TypeID>x<X>y<Y>
+            return sortedBlocks.map(b => `t${b.id}x${b.x}y${b.y}`).join('');
         }
 
         function updateStateDisplay() {
@@ -552,42 +563,52 @@
         }
 
         function isOccupied(blocks, gridX, gridY, newBlock, blockToIgnore) {
+            // Check grid boundaries first
+            if (gridX < 0 || gridX + newBlock.w > COLS || gridY < 0 || gridY + newBlock.h > ROWS) {
+                return true; // Treat out-of-bounds as occupied
+            }
+            // Check against other blocks
             for (const block of blocks) {
-                if (block === blockToIgnore) continue;
+                // Use instanceId to check if it's the block being ignored
+                if (blockToIgnore && block.instanceId === blockToIgnore.instanceId) continue; 
+                // Standard overlap check
                 if (!(gridX + newBlock.w <= block.x || gridX >= block.x + block.w || gridY + newBlock.h <= block.y || gridY >= block.y + block.h)) return true;
             }
             return false;
         }
 
-        // --- New Helper Function to parse state strings ---
+        // --- Updated Helper Function to parse new state strings ---
         function parseStateString(stateStr) {
             const blocks = [];
             if (!stateStr) return blocks;
             try {
-                const parts = stateStr.split('blk').filter(p => p.length > 0);
-                for (const part of parts) { // e.g., "200"
-                    const idChar = part[0];
-                    const posPart = part.substring(1); // "00"
-                    
-                    if (posPart.length !== 2) {
-                        console.warn("Skipping malformed part in parseStateString:", part);
-                        continue;
-                    }
-                    
-                    const id = parseInt(idChar);
-                    const x = parseInt(posPart[0]);
-                    const y = parseInt(posPart[1]);
-                    
-                    const blockType = blockTypes.find(t => t.id === id);
+                // Regex to capture typeId, x, and y from the new format
+                // t(\d+)x(\d+)y(\d+)
+                const regex = /t(\d+)x(\d+)y(\d+)/g;
+                let match;
+                let tempInstanceId = 1; // Assign temporary instance IDs for internal use
+                while ((match = regex.exec(stateStr)) !== null) {
+                    const typeId = parseInt(match[1]);
+                    const x = parseInt(match[2]);
+                    const y = parseInt(match[3]);
+
+                    const blockType = blockTypes.find(t => t.id === typeId);
                     if (blockType && !isNaN(x) && !isNaN(y)) {
-                        blocks.push({ ...blockType, x, y });
+                        // Add temporary instanceId needed for rendering/interaction logic
+                        blocks.push({ ...blockType, x, y, instanceId: tempInstanceId++ }); 
+                    } else {
+                         console.warn("Skipping invalid block data during parse:", match[0]);
                     }
                 }
             } catch (e) {
                 console.error("Error parsing state string:", stateStr, e);
             }
+            // Sort by temporary instanceId before returning, 
+            // consistent with how boardBlocks is (or should be) handled
+             // blocks.sort((a, b) => a.instanceId - b.instanceId); // Not strictly necessary here
             return blocks;
         }
+
 
         // --- New function to draw the mini-board ---
         function drawMiniBoard(stateStr) {
@@ -684,55 +705,68 @@
             
             const newBlocks = parseStateString(stateStr); // Use helper
 
-            // Only update if parser was successful
-            if (newBlocks.length > 0 || stateStr === "") {
+            // When setting state, the number of blocks might change IF the state is just wrong
+            // But we must preserve the *original* instance IDs if possible, or at least
+            // match them up.
+            
+            // This is tricky. When we set state, we are *defining* the board.
+            // The temporary instance IDs from parseStateString (1, 2, 3...)
+            // are fine. They become the new "source of truth" for boardBlocks.
+            // When the user clicks, handleCanvasClick will select one of these
+            // new block objects, and handleMove will work.
+            
+            if (newBlocks.length > 0 || (stateStr === "" && boardBlocks.length > 0)) { 
                 boardBlocks = newBlocks; // Replace the main board
                 selectedGameBlock = null; // Deselect any block
                 redrawCanvas(); // Update the visual board
             }
         }
 
+        // --- Updated findAllPossibleMoves to handle instance IDs ---
         function findAllPossibleMoves(blocks) {
             const neighborStates = new Set();
             for (let i = 0; i < blocks.length; i++) {
+                const currentBlock = blocks[i]; // Use a direct reference with instanceId
                 const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                
                 for (const [dx, dy] of directions) {
-                    const newBlocks = JSON.parse(JSON.stringify(blocks));
-                    const newBlock = newBlocks[i];
+                    // Create a deep copy ONLY if a move might be possible
+                    let newBlocks = null; 
+                    let newBlock = null;
                     let moved = false;
                     
-                    if (newBlock.id === 4) { // 1x1 block
-                        // Try 2-space move (JUMP)
-                        const iX = newBlock.x + dx, iY = newBlock.y + dy, tX = newBlock.x + dx * 2, tY = newBlock.y + dy * 2;
-                        if (tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
-                            isOccupied(newBlocks, iX, iY, newBlock, newBlock) &&  // <-- FIX: Check if intermediate is OCCUPIED
-                            !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) { // <-- Check if target is EMPTY
-                            newBlock.x = tX; newBlock.y = tY; moved = true;
-                        } else {
-                            // Try 1-space move
-                            const tX1 = newBlock.x + dx, tY1 = newBlock.y + dy;
-                            if (tX1 >= 0 && tX1 + 1 <= COLS && tY1 >= 0 && tY1 + 1 <= ROWS && 
-                                !isOccupied(newBlocks, tX1, tY1, newBlock, newBlock)) {
-                                newBlock.x = tX1; newBlock.y = tY1; moved = true;
-                            }
-                        }
-                    } else if (newBlock.id === 2 || newBlock.id === 3) { // 1x2, 2x1 blocks
-                        // 1-space move
+                    if (currentBlock.id === 4) { // 1x1 block (Type ID check)
+                        // Check 1-space move first
+                        const tX1 = currentBlock.x + dx, tY1 = currentBlock.y + dy;
+                        if (!isOccupied(blocks, tX1, tY1, {w:1,h:1, instanceId: currentBlock.instanceId}, currentBlock)) { // Check if target is EMPTY
+                            newBlocks = JSON.parse(JSON.stringify(blocks)); // Now create copy
+                            newBlock = newBlocks[i];
+                            newBlock.x = tX1; newBlock.y = tY1; moved = true;
+                        } 
+                        // Simplified: No 2-space move logic
+                    } else if (currentBlock.id === 2 || currentBlock.id === 3) { // 1x2, 2x1 blocks
+                        // Check 1-space move
                         // Restrict 1x2 and 2x1 blocks
-                        if ((newBlock.id === 3 && dy !== 0) || (newBlock.id === 2 && dx !== 0)) continue;
+                        if ((currentBlock.id === 3 && dy !== 0) || (currentBlock.id === 2 && dx !== 0)) continue;
                         
-                        const tX = newBlock.x + dx, tY = newBlock.y + dy;
-                        if (tX >= 0 && tX + newBlock.w <= COLS && tY >= 0 && tY + newBlock.h <= ROWS && !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) {
+                        const tX = currentBlock.x + dx, tY = currentBlock.y + dy;
+                        // Use currentBlock dimensions for check, pass currentBlock to ignore
+                        if (!isOccupied(blocks, tX, tY, currentBlock, currentBlock)) { // Check if target is EMPTY
+                            newBlocks = JSON.parse(JSON.stringify(blocks)); // Now create copy
+                            newBlock = newBlocks[i];
                             newBlock.x = tX; newBlock.y = tY; moved = true;
                         }
                     }
-                    if (moved) neighborStates.add(generateStateString(newBlocks));
+                    if (moved) {
+                         neighborStates.add(generateStateString(newBlocks));
+                    }
                 }
             }
             return neighborStates;
         }
 
-        // --- New CSV Export Function ---
+
+        // --- Updated CSV Export Function ---
         function exportToCsv() {
             // 1. Find the maximum number of neighbors
             let maxNeighbors = 0;
@@ -785,65 +819,79 @@
                 blockDiv.className = 'palette-block';
                 blockDiv.style.width = `${type.w * 30}px`; blockDiv.style.height = `${type.h * 30}px`;
                 blockDiv.style.backgroundColor = type.color;
+                blockDiv.dataset.typeId = type.id; // Store type ID for reference
                 blockDiv.addEventListener('click', () => {
                     document.querySelectorAll('.palette-block').forEach(b => b.classList.remove('selected'));
                     blockDiv.classList.add('selected');
-                    selectedPaletteBlock = type; canvas.style.cursor = 'copy';
+                    selectedPaletteBlock = type; // Keep storing the type info
+                    canvas.style.cursor = 'copy';
                 });
                 paletteContainer.appendChild(blockDiv);
             });
         }
-
+        
+        // --- Updated handleMove to handle instance IDs ---
         function handleMove(dx, dy) {
-            if (!selectedGameBlock) return;
+            if (!selectedGameBlock) return; // selectedGameBlock now holds the block with instanceId
             const originalState = generateStateString(boardBlocks);
-            const blockIndex = boardBlocks.indexOf(selectedGameBlock);
             let moved = false;
             
-            const tempBlocks = JSON.parse(JSON.stringify(boardBlocks));
-            const blockToMove = tempBlocks[blockIndex];
+            const blockToMove = selectedGameBlock; // Direct reference to the block in boardBlocks
 
-            if (blockToMove.id === 4) { // 1x1 block
-                // Try 2-space move (JUMP)
-                const iX = blockToMove.x + dx, iY = blockToMove.y + dy, tX = blockToMove.x + dx*2, tY = blockToMove.y+dy*2;
-                 if(tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
-                    isOccupied(boardBlocks, iX, iY, boardBlocks[blockIndex], boardBlocks[blockIndex]) &&  // <-- FIX: Check if intermediate is OCCUPIED
-                    !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) { // <-- Check if target is EMPTY
-                     boardBlocks[blockIndex].x = tX; boardBlocks[blockIndex].y = tY; moved = true;
-                 } else {
-                    // Try 1-space move
-                    const tX1 = blockToMove.x + dx, tY1 = blockToMove.y + dy;
-                    if(tX1 >= 0 && tX1 + 1 <= COLS && tY1 >= 0 && tY1 + 1 <= ROWS && 
-                        !isOccupied(boardBlocks, tX1, tY1, boardBlocks[blockIndex], boardBlocks[blockIndex])) {
-                         boardBlocks[blockIndex].x = tX1; boardBlocks[blockIndex].y = tY1; moved = true;
-                    }
+            if (blockToMove.id === 4) { // 1x1 block (Type ID check)
+                 // Check 1-space move
+                 const tX1 = blockToMove.x + dx, tY1 = blockToMove.y + dy;
+                 if (!isOccupied(boardBlocks, tX1, tY1, {w:1,h:1, instanceId: blockToMove.instanceId}, blockToMove)) { // Check if target is EMPTY
+                     // Update the block directly in boardBlocks
+                     blockToMove.x = tX1; blockToMove.y = tY1; moved = true;
                  }
+                 // Simplified: No 2-space move
             } else if (blockToMove.id === 2 || blockToMove.id === 3) { // 1x2, 2x1 blocks
                 // 1-space move
                 // Restrict 1x2 and 2x1 blocks
                 if ((blockToMove.id === 3 && dy !== 0) || (blockToMove.id === 2 && dx !== 0)) return;
 
                 const tX = blockToMove.x + dx, tY = blockToMove.y + dy;
-                if(tX >= 0 && tX + blockToMove.w <= COLS && tY >= 0 && tY + blockToMove.h <= ROWS && !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) {
-                     boardBlocks[blockIndex].x = tX; boardBlocks[blockIndex].y = tY; moved = true;
+                 // Use blockToMove dimensions, pass blockToMove to ignore
+                if (!isOccupied(boardBlocks, tX, tY, blockToMove, blockToMove)) { // Check if target is EMPTY
+                     // Update the block directly in boardBlocks
+                     blockToMove.x = tX; blockToMove.y = tY; moved = true;
                 }
             }
             if (moved) {
                 redrawCanvas();
-                const newState = recordState(boardBlocks);
-                // Don't auto-find neighbors, just record the state
-                if (!stateGraph.get(originalState).neighbors.has(newState)) {
-                    // Manually find neighbors for *just these two states*
-                    if (!stateGraph.get(newState).neighbors || stateGraph.get(newState).neighbors.size === 0) {
-                        stateGraph.get(newState).neighbors = findAllPossibleMoves(boardBlocks);
-                    }
-                    stateGraph.get(originalState).neighbors.add(newState);
-                }
+                const newState = recordState(boardBlocks); // This uses the new state string
+                
+                // Ensure graph entries exist before trying to add neighbors
+                 if (!stateGraph.has(originalState)) recordState(parseStateString(originalState)); 
+                 if (!stateGraph.has(newState)) recordState(boardBlocks); // Add new state if missing
+
+                // Manually find neighbors for *just these two states*
+                 if (stateGraph.has(newState) && (!stateGraph.get(newState).neighbors || stateGraph.get(newState).neighbors.size === 0)) {
+                    stateGraph.get(newState).neighbors = findAllPossibleMoves(boardBlocks);
+                 }
+                 if (stateGraph.has(originalState)) {
+                     // Get neighbors for original state if they weren't calculated yet (e.g., first move)
+                     if (!stateGraph.get(originalState).neighbors || stateGraph.get(originalState).neighbors.size === 0) {
+                         const originalBlocks = parseStateString(originalState);
+                         stateGraph.get(originalState).neighbors = findAllPossibleMoves(originalBlocks);
+                     }
+                     // Add the link if it doesn't exist
+                     if (!stateGraph.get(originalState).neighbors.has(newState)) {
+                         stateGraph.get(originalState).neighbors.add(newState);
+                     }
+                     // Add the reverse link too
+                     if (stateGraph.has(newState) && !stateGraph.get(newState).neighbors.has(originalState)) {
+                          stateGraph.get(newState).neighbors.add(originalState);
+                     }
+                 }
+
                 highlightedState = newState; // Highlight the new state you moved to
                 updateStateDisplay();
                 updateButtonStates(); // Update buttons since graph exists now
             }
         }
+
 
         // --- Event Handlers ---
         playButton.addEventListener('click', () => {
@@ -858,7 +906,10 @@
                 gameInstructions.style.display = 'block'; canvas.style.cursor = 'pointer'; canvas.focus();
                 clearStateSpace();
                 const initialState = recordState(boardBlocks);
-                stateGraph.get(initialState).neighbors = findAllPossibleMoves(boardBlocks);
+                // Ensure the initial state's entry exists before accessing neighbors
+                if (stateGraph.has(initialState)) {
+                    stateGraph.get(initialState).neighbors = findAllPossibleMoves(boardBlocks);
+                }
                 highlightedState = initialState; // Highlight the starting state
                 updateStateDisplay();
             } else {
@@ -889,12 +940,14 @@
             findAllStatesButton.classList.add('exploring');
             updateButtonStates(); // Disable other buttons
 
-            const queue = [generateStateString(boardBlocks)];
+            const startState = generateStateString(boardBlocks);
+            const queue = [startState];
             const visited = new Set(queue);
             // Ensure the starting state is in the graph
-            if (!stateGraph.has(queue[0])) {
-                recordState(boardBlocks);
+            if (!stateGraph.has(startState)) {
+                recordState(boardBlocks); // Make sure the initial state is added
             }
+
 
             while (queue.length > 0) {
                 if (!stopExploration) break; // Check flag at start of loop
@@ -913,10 +966,22 @@
                 }
 
                 const neighbors = findAllPossibleMoves(currentBlocks);
-                stateGraph.set(currentStr, { neighbors });
-                for (const neighbor of neighbors) if (!visited.has(neighbor)) { visited.add(neighbor); queue.push(neighbor); }
+                // Make sure entry exists before setting neighbors
+                 if (!stateGraph.has(currentStr)) {
+                     recordState(currentBlocks); // Add if missing (shouldn't happen often)
+                 }
+                stateGraph.set(currentStr, { neighbors }); // Update neighbors
                 
-                if (queue.length % 50 === 0) { // Update UI periodically, not every loop
+                for (const neighbor of neighbors) if (!visited.has(neighbor)) { 
+                    visited.add(neighbor); 
+                    queue.push(neighbor); 
+                    // Add neighbor to graph immediately to ensure it exists for linking
+                    if (!stateGraph.has(neighbor)) {
+                        stateGraph.set(neighbor, { neighbors: new Set() }); // Initialize neighbor entry
+                    }
+                }
+                
+                if (visited.size % 50 === 0) { // Update UI periodically, not every loop
                     updateStateDisplay();
                     await new Promise(r => setTimeout(r, 0)); // Yield to browser
                 }
@@ -970,11 +1035,21 @@
             const gridX = Math.floor((event.clientX - rect.left) / GRID_SIZE);
             const gridY = Math.floor((event.clientY - rect.top) / GRID_SIZE);
             if (isGameMode) {
+                // Find the specific block instance clicked
                 selectedGameBlock = boardBlocks.find(b => gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h) || null;
                 redrawCanvas(); // Redraw to show selection
             } else {
-                if (!selectedPaletteBlock || gridX + selectedPaletteBlock.w > COLS || gridY + selectedPaletteBlock.h > ROWS || isOccupied(boardBlocks, gridX, gridY, selectedPaletteBlock, null)) return;
-                boardBlocks.push({ x: gridX, y: gridY, ...selectedPaletteBlock });
+                if (!selectedPaletteBlock || gridX + selectedPaletteBlock.w > COLS || gridY + selectedPaletteBlock.h > ROWS) return;
+                // Create a new block object with a unique instance ID
+                const newBlock = { 
+                    x: gridX, 
+                    y: gridY, 
+                    ...selectedPaletteBlock, // Copy type data (w, h, id, color)
+                    instanceId: nextBlockInstanceId++ // Assign unique ID
+                }; 
+                if (isOccupied(boardBlocks, gridX, gridY, newBlock, null)) return; // Check occupancy using newBlock
+                
+                boardBlocks.push(newBlock);
                 clearStateSpace();
                 updateButtonStates();
                 redrawCanvas();
@@ -986,7 +1061,11 @@
             const rect = canvas.getBoundingClientRect();
             const gridX = Math.floor((event.clientX - rect.left) / GRID_SIZE);
             const gridY = Math.floor((event.clientY - rect.top) / GRID_SIZE);
-            boardBlocks = boardBlocks.filter(b => !(gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h));
+            // Find the instance ID of the block to remove
+            const blockToRemove = boardBlocks.find(b => gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h);
+            if (blockToRemove) {
+                 boardBlocks = boardBlocks.filter(b => b.instanceId !== blockToRemove.instanceId);
+            }
             clearStateSpace(); updateButtonStates(); redrawCanvas();
         });
         canvas.addEventListener('keydown', (event) => {
@@ -997,8 +1076,12 @@
             if (move) handleMove(...move);
         });
         clearButton.addEventListener('click', () => {
-            boardBlocks = []; selectedGameBlock = null;
-            clearStateSpace(); updateButtonStates(); redrawCanvas();
+            boardBlocks = []; 
+            selectedGameBlock = null;
+            nextBlockInstanceId = 1; // Reset instance ID counter
+            clearStateSpace(); 
+            updateButtonStates(); 
+            redrawCanvas();
         });
         
         function drawStateGraph() {
@@ -1012,12 +1095,16 @@
             });
             const links = [];
             stateGraph.forEach((data, source) => {
-                data.neighbors.forEach(target => {
-                    // Only add links one way to avoid duplicates if graph is undirected
-                    if (source < target) {
-                        links.push({ source, target });
-                    }
-                });
+               // Ensure data and neighbors exist before iterating
+                if (data && data.neighbors) {
+                    data.neighbors.forEach(target => {
+                        // Only add links one way to avoid duplicates if graph is undirected
+                        // AND ensure the target node actually exists in our nodes list
+                        if (source < target && stateGraph.has(target)) {
+                            links.push({ source, target });
+                        }
+                    });
+                }
             });
 
             // 2. Find min/max degree for color scale
@@ -1056,7 +1143,7 @@
             const link = g.append("g").attr("stroke", "#999").attr("stroke-opacity", 0.6)
                 .selectAll("line").data(links).join("line").attr("stroke-width", 1.5);
 
-            const node = g.append("g").attr("stroke", "#333").attr("stroke-width", 1.5) // <-- FIX: Set dark outline
+            const node = g.append("g").attr("stroke", "#333").attr("stroke-width", 1.5) // <-- Set dark outline
                 .selectAll("circle").data(nodes).join("circle")
                 .attr("class", "node") // Add a class for selection
                 .attr("r", 8) 
@@ -1166,7 +1253,9 @@
                 node.classed("selected", false);
                 // Find the actual DOM element corresponding to data 'd'
                 const thisNodeElement = node.filter(nd => nd.id === d.id).node();
-                d3.select(thisNodeElement).classed("selected", true);
+                if(thisNodeElement) { // Safety check
+                    d3.select(thisNodeElement).classed("selected", true);
+                }
                 
                 // 2. Update the floating window
                 drawMiniBoard(d.id);
@@ -1189,8 +1278,12 @@
                 
                 // NEW LOGIC: Navigate neighbors
                 if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                    stopAutoRotate(); // Stop auto-rotate on manual navigation
                     if (!selectedNodeData) return; // Nothing selected
-                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                     // Ensure neighbors data exists
+                    const neighborData = stateGraph.get(selectedNodeData.id);
+                    if (!neighborData || !neighborData.neighbors) return; 
+                    const neighbors = Array.from(neighborData.neighbors).sort();
                     if (neighbors.length === 0) return; // No neighbors
                     
                     // Decrement index and wrap around
@@ -1204,8 +1297,12 @@
                     }
 
                 } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                    stopAutoRotate(); // Stop auto-rotate on manual navigation
                     if (!selectedNodeData) return; // Nothing selected
-                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                    // Ensure neighbors data exists
+                    const neighborData = stateGraph.get(selectedNodeData.id);
+                    if (!neighborData || !neighborData.neighbors) return;
+                    const neighbors = Array.from(neighborData.neighbors).sort();
                     if (neighbors.length === 0) return; // No neighbors
 
                     // Increment index and wrap around
