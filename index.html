@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-    Date: October 22, 2025
+    Date created: October 22, 2025
     This code is generated with Gemini 2.5 Pro through multiple prompts and attempts.
     
     Iteration Log:
@@ -45,6 +45,7 @@
     - v31.0: Simplified 1x1 block movement to 1 space only.
     - v32.0: Added unique instance IDs to blocks.
     - v33.0: Changed state format to ignore instance IDs (e.g., t4x0y0t4x1y1)
+    - v34.0: Implemented spatial arrow key navigation in graph.
 -->
 <html lang="en">
 <head>
@@ -1127,8 +1128,8 @@
             clearMiniBoard();
 
             // --- Add state variables for node navigation ---
-            let selectedNodeData = null;
-            let selectedNeighborIndex = 0;
+            let selectedNodeData = null; // Stores the node *data* {id, degree, x, y...}
+            let selectedNeighborIndex = 0; // Tracks which neighbor to move to next
 
             const width = svg.node().getBoundingClientRect().width;
             const height = svg.node().getBoundingClientRect().height;
@@ -1160,6 +1161,14 @@
                 link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
                     .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
                 node.attr("cx", d => d.x).attr("cy", d => d.y);
+                // Update selectedNodeData with current positions if it exists
+                if (selectedNodeData) {
+                    const updatedData = nodes.find(n => n.id === selectedNodeData.id);
+                    if (updatedData) {
+                        selectedNodeData.x = updatedData.x;
+                        selectedNodeData.y = updatedData.y;
+                    }
+                }
             });
             
             // --- Shared rotation logic ---
@@ -1237,12 +1246,20 @@
             function dragstarted(event, d) {
                 stopAutoRotate(); // Stop auto-rotate on manual drag
                 if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x; d.fy = d.y;
+                // Store the node's current position (use simulation position, not event position)
+                d.fx = d.x; 
+                d.fy = d.y;
             }
-            function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+            function dragged(event, d) { 
+                 // Update the fixed position based on the drag event
+                 d.fx = event.x; 
+                 d.fy = event.y; 
+            }
             function dragended(event, d) {
                 if (!event.active) simulation.alphaTarget(0);
-                d.fx = null; d.fy = null;
+                // Keep fx/fy to fix the node, or set to null to release it
+                // d.fx = null; 
+                // d.fy = null;
             }
 
             // --- New Node Click Logic ---
@@ -1264,60 +1281,108 @@
                 setBoardFromState(d.id);
                 highlightedState = d.id;
                 
-                // 4. Update state for keyboard navigation
-                selectedNodeData = d;
+                // 4. Update state for keyboard navigation - Use the 'd' passed to the function
+                // 'd' here is the node *data* object from the D3 simulation
+                selectedNodeData = d; 
                 selectedNeighborIndex = 0; // Reset neighbor index on new node click
 
                 updateStateDisplay(); // This updates the list *behind* the modal
             }
 
-            // --- Manual Rotation Logic ---
-            // Keyboard
+            // --- Arrow Key Navigation & Manual Rotation --- // Updated Section
             svg.on("keydown", (event) => {
                 event.preventDefault();
-                
-                // NEW LOGIC: Navigate neighbors
-                if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                    stopAutoRotate(); // Stop auto-rotate on manual navigation
-                    if (!selectedNodeData) return; // Nothing selected
-                     // Ensure neighbors data exists
-                    const neighborData = stateGraph.get(selectedNodeData.id);
-                    if (!neighborData || !neighborData.neighbors) return; 
-                    const neighbors = Array.from(neighborData.neighbors).sort();
-                    if (neighbors.length === 0) return; // No neighbors
-                    
-                    // Decrement index and wrap around
-                    selectedNeighborIndex = (selectedNeighborIndex - 1 + neighbors.length) % neighbors.length;
-                    const newNeighborId = neighbors[selectedNeighborIndex];
-                    
-                    // Programmatically "click" the new node
-                    const newNodeData = nodes.find(n => n.id === newNeighborId);
-                    if (newNodeData) {
-                        nodeClicked(new Event('synthetic'), newNodeData);
+                stopAutoRotate(); // Stop auto-rotate on any key press
+
+                if (!selectedNodeData || selectedNodeData.x === undefined || selectedNodeData.y === undefined) {
+                    console.warn("No node selected or node position not available for navigation.");
+                    return; // Need a selected node *with position* to navigate from
+                }
+
+                // Ensure neighbors data exists and is populated
+                const neighborData = stateGraph.get(selectedNodeData.id);
+                if (!neighborData || !neighborData.neighbors || neighborData.neighbors.size === 0) {
+                     console.warn("Selected node has no neighbors in graph data.");
+                     return; 
+                }
+
+                const neighbors = Array.from(neighborData.neighbors);
+                if (neighbors.length === 0) return; // No neighbors to navigate to
+
+                // Get positions of current node and neighbors FROM THE SIMULATION DATA
+                // Make sure simulation data is up-to-date
+                 const currentSimNode = nodes.find(n => n.id === selectedNodeData.id);
+                 if (!currentSimNode) {
+                    console.error("Could not find current node in simulation data:", selectedNodeData.id);
+                    return;
+                 }
+                const selectedPos = { x: currentSimNode.x, y: currentSimNode.y };
+
+                const neighborPositions = neighbors.map(neighborId => {
+                    const nodeInfo = nodes.find(n => n.id === neighborId);
+                    if (!nodeInfo || nodeInfo.x === undefined || nodeInfo.y === undefined) {
+                        console.warn("Neighbor node missing or position undefined:", neighborId);
+                        return null; // Skip neighbors without valid data
                     }
-
-                } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                    stopAutoRotate(); // Stop auto-rotate on manual navigation
-                    if (!selectedNodeData) return; // Nothing selected
-                    // Ensure neighbors data exists
-                    const neighborData = stateGraph.get(selectedNodeData.id);
-                    if (!neighborData || !neighborData.neighbors) return;
-                    const neighbors = Array.from(neighborData.neighbors).sort();
-                    if (neighbors.length === 0) return; // No neighbors
-
-                    // Increment index and wrap around
-                    selectedNeighborIndex = (selectedNeighborIndex + 1) % neighbors.length;
-                    const newNeighborId = neighbors[selectedNeighborIndex];
+                    // Calculate angle relative to the selected node
+                    const angleRad = Math.atan2(nodeInfo.y - selectedPos.y, nodeInfo.x - selectedPos.x);
+                    let angleDeg = angleRad * (180 / Math.PI);
+                    if (angleDeg < 0) angleDeg += 360; // Normalize to 0-360
                     
-                    // Programmatically "click" the new node
-                    const newNodeData = nodes.find(n => n.id === newNeighborId);
+                    return { id: neighborId, x: nodeInfo.x, y: nodeInfo.y, angle: angleDeg };
+                }).filter(n => n !== null); // Filter out any null entries
+
+                if (neighborPositions.length === 0) {
+                    console.warn("No valid neighbor positions found.");
+                    return; // No valid neighbors found
+                }
+
+                let targetAngle = -1;
+                switch(event.key) {
+                    case "ArrowUp": targetAngle = 270; break;
+                    case "ArrowDown": targetAngle = 90; break;
+                    case "ArrowLeft": targetAngle = 180; break;
+                    case "ArrowRight": targetAngle = 0; break;
+                    default: return; // Ignore other keys for navigation
+                }
+
+                // Find the neighbor with the minimum angular difference
+                let closestNeighbor = null;
+                let minAngleDiff = 360; // Max possible difference
+
+                neighborPositions.forEach(neighbor => {
+                    let diff = Math.abs(neighbor.angle - targetAngle);
+                    if (diff > 180) diff = 360 - diff; // Handle wrap-around difference (e.g., 10 vs 350)
+                    if (diff < minAngleDiff) {
+                        minAngleDiff = diff;
+                        closestNeighbor = neighbor;
+                    }
+                });
+
+                let targetNeighborId = null;
+
+                 // --- Simplified Logic: Always use the closest angle ---
+                 // The specific rules for 2/3 neighbors were complex and might feel
+                 // less intuitive than just going to the visually closest one in that direction.
+                 // If the angle difference is too large (e.g., > 90 degrees), maybe don't move?
+                 if (closestNeighbor && minAngleDiff < 90) { // Only move if reasonably close angle-wise
+                     targetNeighborId = closestNeighbor.id;
+                 } else {
+                     console.log("No neighbor found in target direction or angle difference too large:", minAngleDiff);
+                 }
+
+
+                // Programmatically "click" the target node
+                if (targetNeighborId) {
+                    const newNodeData = nodes.find(n => n.id === targetNeighborId);
                     if (newNodeData) {
+                        // Trigger the click logic directly
                         nodeClicked(new Event('synthetic'), newNodeData);
                     }
                 }
             });
 
-            // On-screen Buttons
+            // On-screen Buttons (Rotation - unchanged)
             d3.select("#rotate-left-btn").on("click", () => {
                 stopAutoRotate();
                 setRotation(-5);
@@ -1337,5 +1402,7 @@
     </script>
 </body>
 </html>
+
+
 
 
