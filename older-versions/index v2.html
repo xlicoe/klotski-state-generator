@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<!--
+    Date: October 22, 2025
+    This code is generated with Gemini 2.5 Pro through multiple prompts and attempts.
+    
+  Iteration Log:
+    - v1.0: Initial 6x6 grid layout
+    - v2.0: Added block palette and placement
+    - v3.0: Implemented game mode with WASD/Arrow key movement
+    - v4.0: Added pillars and special movement rules (1x1 jump, 1x2/2x1 restricted)
+    - v5.0: Added state space tracking (list of unique states)
+    - v6.0: Implemented state graph (neighbor tracking) and "Find All States" logic
+    - v7.0: Added D3.js visualization modal
+    - v8.0: Added zoom, pan, and manual/auto rotation to graph
+    - v9.0: Added neighbor list toggle and CSV export
+    - v9.1: Added "Clear States" button
+    - v10.0: Re-added 2x2 block and fixed movement logic
+    - v11.0: Updated state ID format (e.g., "blk1 22")
+    - v11.1: Added safety checks to "Find All States"
+    - v12.0: Added "Stop Exploring" toggle to "Find All States"
+    - v13.0: Updated state ID format to "blk122" (no space)
+    - v14.0: Updated state ID format to "blk122blk201" (no space between blocks)
+    - v15.0: Updated CSV export to place neighbors in separate columns
+    - v16.0: Changed grid size to 4x5
+    - v17.0: Removed 2x2 block for a simpler "basics" version
+    - v18.0: Fixed 1x1 block "jump" logic (must jump over occupied space)
+    - v18.1: (Bugfix) Removed stray text causing SyntaxError
+    - v19.0: Added random direction to auto-rotation
+    - v20.0: Title and Header comment updates
+    - v21.0: Color-coded graph nodes by neighbor count (degree)
+    - v21.1: Fixed node outlines in graph (stroke: #333)
+    - v21.2: (Bugfix) Fixed typo 'posPArt' to 'posPart'
+    - v22.0: Moved state panel, re-ordered buttons, updated button logic
+    - v23.0: Centered and enlarged "State Space" title, moved panel below main title
+    - v24.0: Moved state panel to the left column
+    - v25.0: Fixed layout wrapping issue, moved Title to top of page
+    - v26.0: Swapped left/right columns, added "Building Blocks" title
+    - v26.1: Adjusted "Building Blocks" title spacing
+    - v27.0: Added "set board from state" interactivity
+    - v28.0: Added floating info window in graph, click node to set board
+    - v28.1: Moved graph info window to top-left corner
+    - v29.0: Changed graph arrow key behavior to navigate neighbor nodes
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klotski State Space Tutorial v2</title>
+    <!-- Add D3.js library -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            padding: 20px;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column; /* Main layout is now top-to-bottom */
+            align-items: center; /* Center all content */
+        }
+        
+        #title-container {
+            text-align: center;
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 20px;
+        }
+
+        #main-container {
+            display: flex;
+            flex-flow: row wrap; /* Row flow for panels */
+            justify-content: center;
+            align-items: flex-start; /* Align columns to top */
+            gap: 30px;
+            width: 100%;
+        }
+        #designer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            width: fit-content;
+        }
+        #info-panel { min-height: 40px; text-align: center; }
+        h1 { color: #333; margin: 0; }
+        p { margin: 0 0 10px 0; color: #666; }
+        #palette-container {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            padding: 10px;
+            background-color: #e9e9e9;
+            border-radius: 8px;
+            border: 1px solid #ccc; /* Added border for better outline */
+        }
+        .palette-block { cursor: pointer; border: 2px solid transparent; box-sizing: border-box; }
+        .palette-block.selected { border: 2px solid #007bff; border-radius: 4px; }
+        #gridCanvas {
+            border: 2px solid #333;
+            background-color: #fff;
+            outline: none;
+        }
+        #gridCanvas:focus { border-color: #007bff; }
+        #controls { display: flex; gap: 10px; }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+        #clearButton { background-color: #dc3545; }
+        #clearButton:hover { background-color: #c82333; }
+        #playButton { background-color: #28a745; }
+        #playButton:hover { background-color: #218838; }
+        #playButton.game-mode { background-color: #007bff; }
+        #playButton.game-mode:hover { background-color: #0069d9; }
+        #findAllStatesButton { background-color: #ffc107; color: #212529; }
+        #findAllStatesButton:hover { background-color: #e0a800; }
+        /* Style for when exploring */
+        #findAllStatesButton.exploring {
+            background-color: #dc3545; /* Red */
+            color: white;
+        }
+        #findAllStatesButton.exploring:hover {
+            background-color: #c82333;
+        }
+        #visualizeButton { background-color: #17a2b8; }
+        #visualizeButton:hover { background-color: #138496; }
+        #exportCsvButton { background-color: #6c757d; } 
+        #exportCsvButton:hover { background-color: #5a6268; }
+        #toggleNeighborsButton { background-color: #fd7e14; } /* New Toggle button style */
+        #toggleNeighborsButton:hover { background-color: #e36a00; }
+        #clearStatesButton { background-color: #dc3545; } /* New Clear States button */
+        #clearStatesButton:hover { background-color: #c82333; }
+        
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        button:disabled:hover { background-color: #6c757d; }
+
+        #state-space-container {
+            width: 400px; /* Adjusted width */
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+        }
+        
+        #state-space-container h3 {
+            font-size: 1.5em; /* Larger font size */
+            text-align: center; /* Centered */
+            margin: 0 0 10px 0;
+        }
+
+
+        #state-list-wrapper { /* New wrapper for flex layout */
+            display: flex;
+            gap: 10px;
+        }
+        #state-list-container, #neighbor-list-container {
+            flex: 1; /* Each takes half the space */
+            min-width: 0; /* Prevents flex overflow */
+        }
+        #neighbor-list-container {
+            display: none; /* Hide neighbor list by default */
+        }
+        #state-list, #neighbor-list {
+            height: 300px; /* Adjusted height */
+            overflow-y: auto;
+            background-color: #fff;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre;
+        }
+        .state-item {
+            padding: 2px 4px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            word-break: break-all; /* Handle long state strings */
+        }
+        .state-item:hover { background-color: #e9ecef; }
+        .state-item.highlighted { background-color: #007bff; color: white; }
+        .state-item.neighbor { background-color: #90ee90; }
+
+        /* Graph Modal Styles */
+        #graph-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        #graph-container {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            width: 90vw;
+            height: 90vh;
+            position: relative;
+            overflow: hidden; /* Hide anything that goes outside the container */
+        }
+        #close-modal {
+            position: absolute;
+            top: 10px; right: 20px;
+            font-size: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 10; /* Make sure it's above the SVG */
+        }
+        #graph-svg { 
+            width: 100%; 
+            height: 100%; 
+            outline: none; /* Remove focus ring */
+        }
+        /* New selected node style */
+        #graph-svg .node.selected {
+            stroke: #e63946; /* A bright red */
+            stroke-width: 4px;
+        }
+        /* New floating tooltip style */
+        #graph-infobox {
+            position: absolute;
+            top: 20px;
+            left: 20px; /* <-- Moved to top left (was right: 20px) */
+            z-index: 10;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        #mini-board-canvas {
+            background-color: #fff;
+            border: 1px solid #999;
+            display: block; /* Remove any extra spacing */
+        }
+        #mini-board-id {
+            font-family: monospace;
+            font-size: 10px;
+            word-break: break-all;
+            margin: 5px 0 0 0;
+            max-width: 80px; /* 4 * 20px */
+        }
+        /* On-Screen Rotate Buttons */
+        #rotate-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #rotate-controls button {
+            font-size: 24px;
+            width: 50px;
+            height: 50px;
+            padding: 0;
+            line-height: 50px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 50%; /* Make them round */
+            border: none;
+            background-color: #007bff;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #rotate-controls button:hover {
+            background-color: #0056b3;
+        }
+        /* Style for the new toggle button */
+        #rotate-controls button#toggle-rotate-btn {
+            width: auto;
+            border-radius: 25px; /* Pill shape */
+            padding: 0 15px;
+            font-size: 16px;
+            height: 40px;
+            line-height: 40px;
+        }
+        #rotate-controls button#toggle-rotate-btn.active {
+            background-color: #28a745; /* Green when active */
+        }
+        #rotate-controls button#toggle-rotate-btn.active:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <!-- Title and Info Panel are now at the top of the page -->
+    <div id="title-container">
+        <h1>Klotski State Space Tutorial v2</h1>
+        <div id="info-panel">
+            <p id="designer-instructions">Click a shape, then click on the grid to place it. Right-click to remove.</p>
+            <p id="game-instructions" style="display: none;">Click a block, then use WASD/Arrow Keys.</p>
+        </div>
+    </div>
+
+    <!-- Main container holds the two columns -->
+    <div id="main-container">
+        <!-- Designer Container (Left Column) -->
+        <div id="designer-container">
+            <h4 style="margin: 10px 0 2px 0; text-align: center;">Building Blocks</h4> <!-- Adjusted bottom margin -->
+            <div id="palette-container"></div>
+            <canvas id="gridCanvas" tabindex="0"></canvas>
+            <div id="controls">
+                <button id="clearButton">Clear Board</button>
+                <button id="playButton" disabled>Play</button>
+            </div>
+        </div>
+        
+        <!-- State Space Panel (Right Column) -->
+        <div id="state-space-container">
+            <h3>State Space</h3>
+            <p style="text-align: center;">Unique states found: <span id="state-count">0</span></p>
+            <!-- New wrapper for the two lists -->
+            <div id="state-list-wrapper">
+                <div id="state-list-container">
+                    <h4 style="margin: 0 0 5px 0;">All States</h4>
+                    <div id="state-list"></div>
+                </div>
+                <div id="neighbor-list-container">
+                    <h4 id="neighbor-list-header" style="margin: 0 0 5px 0;">Neighbors (0)</h4>
+                    <div id="neighbor-list"></div>
+                </div>
+            </div>
+            <!-- Wrapper for buttons -->
+            <div id="state-buttons-wrapper" style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                <button id="findAllStatesButton" disabled>Find All States</button>
+                <button id="visualizeButton" disabled>Visualize Graph</button>
+                <button id="exportCsvButton" disabled>Export to CSV</button>
+                <button id="toggleNeighborsButton" disabled>Show Neighbors</button>
+                <button id="clearStatesButton" disabled>Clear States</button>
+            </div>
+        </div>
+
+    </div>
+    
+    <!-- Graph Visualization Modal -->
+    <div id="graph-modal">
+        <div id="graph-container">
+            <span id="close-modal">&times;</span>
+            <!-- New Info Box with Mini-Canvas -->
+            <div id="graph-infobox">
+                <h5 style="margin: 0 0 5px 0;">Selected State</h5>
+                <canvas id="mini-board-canvas"></canvas>
+                <p id="mini-board-id">Click a node</p>
+            </div>
+            <svg id="graph-svg" tabindex="0"></svg> <!-- Make SVG focusable -->
+            <!-- Add new rotate buttons -->
+            <div id="rotate-controls">
+                <button id="rotate-left-btn">⟲</button>
+                <button id="toggle-rotate-btn">Auto-Rotate</button>
+                <button id="rotate-right-btn">⟳</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gridCanvas');
+        const ctx = canvas.getContext('2d');
+        const paletteContainer = document.getElementById('palette-container');
+        const clearButton = document.getElementById('clearButton');
+        const playButton = document.getElementById('playButton');
+        const findAllStatesButton = document.getElementById('findAllStatesButton');
+        const toggleNeighborsButton = document.getElementById('toggleNeighborsButton');
+        const visualizeButton = document.getElementById('visualizeButton');
+        const exportCsvButton = document.getElementById('exportCsvButton');
+        const clearStatesButton = document.getElementById('clearStatesButton');
+        const designerInstructions = document.getElementById('designer-instructions');
+        const gameInstructions = document.getElementById('game-instructions');
+        const stateCountEl = document.getElementById('state-count');
+        const stateListEl = document.getElementById('state-list');
+        const neighborListContainer = document.getElementById('neighbor-list-container');
+        const neighborListHeaderEl = document.getElementById('neighbor-list-header');
+        const neighborListEl = document.getElementById('neighbor-list');
+        const graphModal = document.getElementById('graph-modal');
+        const closeModal = document.getElementById('close-modal');
+        const graphSvg = document.getElementById('graph-svg');
+        // New mini-board elements
+        const miniBoardCanvas = document.getElementById('mini-board-canvas');
+        const miniBoardCtx = miniBoardCanvas.getContext('2d');
+        const miniBoardIdEl = document.getElementById('mini-board-id');
+
+        // --- Constants ---
+        const GRID_SIZE = 80;
+        const MINI_GRID_SIZE = 20; // New constant for mini-board
+        const COLS = 4;
+        const ROWS = 5;
+        const LINE_COLOR = '#cccccc';
+        const blockTypes = [
+            // { id: 1, w: 2, h: 2, color: 'hsl(0, 84%, 60%)' },  // Red 2x2 (REMOVED for basics)
+            { id: 2, w: 1, h: 2, color: 'hsl(220, 90%, 60%)' }, // Blue 1x2 (Vertical)
+            { id: 3, w: 2, h: 1, color: 'hsl(145, 63%, 49%)' }, // Green 2x1 (Horizontal)
+            { id: 4, w: 1, h: 1, color: 'hsl(45, 93%, 47%)' },  // Yellow 1x1
+        ];
+
+        // --- State ---
+        let boardBlocks = [];
+        let selectedPaletteBlock = null;
+        let selectedGameBlock = null;
+        let isGameMode = false;
+        let stateGraph = new Map();
+        let highlightedState = null;
+        let currentGraphRotation = 0;
+        let rotationAnimationId = null;
+        let isAutoRotating = false;
+        let neighborsVisible = false;
+        let stopExploration = false; // Flag to stop the "Find All States" loop
+        let allStatesFound = false; // New flag to track if exploration completed
+
+        canvas.width = COLS * GRID_SIZE;
+        canvas.height = ROWS * GRID_SIZE;
+
+        function updateButtonStates() {
+            const hasBlocks = boardBlocks.length > 0;
+            const hasGraph = stateGraph.size > 0;
+            
+            playButton.disabled = !hasBlocks || stopExploration; // Disable play if exploring
+            findAllStatesButton.disabled = !isGameMode;
+            clearButton.disabled = isGameMode || stopExploration;
+            
+            // These buttons require the full graph to be generated
+            visualizeButton.disabled = !allStatesFound || stopExploration;
+            exportCsvButton.disabled = !allStatesFound || stopExploration;
+
+            // These buttons can work as long as any graph exists
+            toggleNeighborsButton.disabled = !hasGraph || stopExploration;
+            clearStatesButton.disabled = !hasGraph || stopExploration;
+        }
+        
+        // --- Drawing ---
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = LINE_COLOR;
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= COLS; x++) {
+                const xPos = x * GRID_SIZE;
+                ctx.beginPath(); ctx.moveTo(xPos, 0); ctx.lineTo(xPos, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                const yPos = y * GRID_SIZE;
+                ctx.beginPath(); ctx.moveTo(0, yPos); ctx.lineTo(canvas.width, yPos); ctx.stroke();
+            }
+            ctx.fillStyle = '#a0a0a0';
+            for (let y = 0; y <= ROWS; y++) {
+                for (let x = 0; x <= COLS; x++) {
+                    ctx.beginPath(); ctx.arc(x * GRID_SIZE, y * GRID_SIZE, 4, 0, 2 * Math.PI); ctx.fill();
+                }
+            }
+        }
+        
+        function drawBlocks() {
+            boardBlocks.forEach(block => {
+                ctx.fillStyle = block.color;
+                const rX = block.x * GRID_SIZE, rY = block.y * GRID_SIZE, rW = block.w * GRID_SIZE, rH = block.h * GRID_SIZE;
+                ctx.fillRect(rX, rY, rW, rH);
+                ctx.strokeStyle = (isGameMode && block === selectedGameBlock) ? '#007bff' : '#333';
+                ctx.lineWidth = (isGameMode && block === selectedGameBlock) ? 5 : 2;
+                ctx.strokeRect(rX, rY, rW, rH);
+            });
+        }
+        function redrawCanvas() { drawGrid(); drawBlocks(); }
+
+        // --- State Graph Logic ---
+        function generateStateString(blocks) {
+            const sortedBlocks = [...blocks].sort((a, b) => (a.y !== b.y) ? a.y - b.y : a.x - b.x);
+            // New format: "blk" + id + x + y (no space between blocks)
+            return sortedBlocks.map(b => `blk${b.id}${b.x}${b.y}`).join(''); // Changed from .join(' ')
+        }
+
+        function updateStateDisplay() {
+            stateCountEl.textContent = stateGraph.size;
+            stateListEl.innerHTML = '';
+            neighborListEl.innerHTML = ''; // Clear neighbor list
+            
+            const neighbors = highlightedState ? stateGraph.get(highlightedState)?.neighbors : new Set();
+            neighborListHeaderEl.textContent = `Neighbors (${neighbors.size})`;
+            
+            const sortedStates = Array.from(stateGraph.keys()).sort();
+            
+            // Populate All States list
+            sortedStates.forEach(state => {
+                const stateDiv = document.createElement('div');
+                stateDiv.className = 'state-item';
+                if (state === highlightedState) stateDiv.classList.add('highlighted');
+                else if (neighbors && neighbors.has(state)) stateDiv.classList.add('neighbor');
+                stateDiv.textContent = state;
+                stateDiv.addEventListener('click', () => { 
+                    highlightedState = state; 
+                    if (isGameMode) {
+                        setBoardFromState(state); // Update the board
+                    }
+                    updateStateDisplay(); 
+                });
+                stateListEl.appendChild(stateDiv);
+            });
+
+            // Populate Neighbors list
+            const sortedNeighbors = Array.from(neighbors).sort();
+            sortedNeighbors.forEach(neighborState => {
+                const stateDiv = document.createElement('div');
+                stateDiv.className = 'state-item';
+                stateDiv.textContent = neighborState;
+                // Add click event to jump to this state
+                stateDiv.addEventListener('click', () => { 
+                    highlightedState = neighborState; 
+                    if (isGameMode) {
+                        setBoardFromState(neighborState); // Update the board
+                    }
+                    updateStateDisplay(); 
+                });
+                neighborListEl.appendChild(stateDiv);
+            });
+
+            // Scroll highlighted item into view
+            const highlightedEl = stateListEl.querySelector('.highlighted');
+            if (highlightedEl) {
+                highlightedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+        }
+
+        function recordState(blocks) {
+            const stateStr = generateStateString(blocks);
+            if (stateStr && !stateGraph.has(stateStr)) {
+                stateGraph.set(stateStr, { neighbors: new Set() });
+            }
+            return stateStr;
+        }
+
+        function clearStateSpace() {
+            stateGraph.clear();
+            highlightedState = null;
+            allStatesFound = false; // Reset flag
+            updateStateDisplay();
+            updateButtonStates();
+            neighborListEl.innerHTML = ''; // Clear neighbor list
+            neighborListHeaderEl.textContent = 'Neighbors (0)';
+            // Reset toggle button
+            neighborListContainer.style.display = 'none';
+            toggleNeighborsButton.textContent = 'Show Neighbors';
+            neighborsVisible = false;
+        }
+
+        function isOccupied(blocks, gridX, gridY, newBlock, blockToIgnore) {
+            for (const block of blocks) {
+                if (block === blockToIgnore) continue;
+                if (!(gridX + newBlock.w <= block.x || gridX >= block.x + block.w || gridY + newBlock.h <= block.y || gridY >= block.y + block.h)) return true;
+            }
+            return false;
+        }
+
+        // --- New Helper Function to parse state strings ---
+        function parseStateString(stateStr) {
+            const blocks = [];
+            if (!stateStr) return blocks;
+            try {
+                const parts = stateStr.split('blk').filter(p => p.length > 0);
+                for (const part of parts) { // e.g., "200"
+                    const idChar = part[0];
+                    const posPart = part.substring(1); // "00"
+                    
+                    if (posPart.length !== 2) {
+                        console.warn("Skipping malformed part in parseStateString:", part);
+                        continue;
+                    }
+                    
+                    const id = parseInt(idChar);
+                    const x = parseInt(posPart[0]);
+                    const y = parseInt(posPart[1]);
+                    
+                    const blockType = blockTypes.find(t => t.id === id);
+                    if (blockType && !isNaN(x) && !isNaN(y)) {
+                        blocks.push({ ...blockType, x, y });
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing state string:", stateStr, e);
+            }
+            return blocks;
+        }
+
+        // --- New function to draw the mini-board ---
+        function drawMiniBoard(stateStr) {
+            // Set dimensions
+            miniBoardCanvas.width = COLS * MINI_GRID_SIZE;
+            miniBoardCanvas.height = ROWS * MINI_GRID_SIZE;
+            
+            const blocks = parseStateString(stateStr);
+            
+            // 1. Draw grid
+            miniBoardCtx.clearRect(0, 0, miniBoardCanvas.width, miniBoardCanvas.height);
+            miniBoardCtx.strokeStyle = '#ddd'; // Lighter grid
+            miniBoardCtx.lineWidth = 0.5;
+            for (let x = 0; x <= COLS; x++) {
+                const xPos = x * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(xPos, 0);
+                miniBoardCtx.lineTo(xPos, miniBoardCanvas.height);
+                miniBoardCtx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                const yPos = y * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(0, yPos);
+                miniBoardCtx.lineTo(miniBoardCanvas.width, yPos);
+                miniBoardCtx.stroke();
+            }
+            
+            // 2. Draw pillars (smaller)
+            miniBoardCtx.fillStyle = '#ccc';
+            for (let y = 0; y <= ROWS; y++) {
+                for (let x = 0; x <= COLS; x++) {
+                    miniBoardCtx.beginPath();
+                    miniBoardCtx.arc(x * MINI_GRID_SIZE, y * MINI_GRID_SIZE, 1, 0, 2 * Math.PI); // 1px radius
+                    miniBoardCtx.fill();
+                }
+            }
+
+            // 3. Draw blocks
+            blocks.forEach(block => {
+                miniBoardCtx.fillStyle = block.color;
+                miniBoardCtx.fillRect(
+                    block.x * MINI_GRID_SIZE,
+                    block.y * MINI_GRID_SIZE,
+                    block.w * MINI_GRID_SIZE,
+                    block.h * MINI_GRID_SIZE
+                );
+                miniBoardCtx.strokeStyle = '#333';
+                miniBoardCtx.lineWidth = 1;
+                miniBoardCtx.strokeRect(
+                    block.x * MINI_GRID_SIZE,
+                    block.y * MINI_GRID_SIZE,
+                    block.w * MINI_GRID_SIZE,
+                    block.h * MINI_GRID_SIZE
+                );
+            });
+
+            // 4. Update the ID text
+            miniBoardIdEl.textContent = stateStr;
+        }
+
+        // --- New function to clear the mini-board ---
+        function clearMiniBoard() {
+            // Set dimensions
+            miniBoardCanvas.width = COLS * MINI_GRID_SIZE;
+            miniBoardCanvas.height = ROWS * MINI_GRID_SIZE;
+            
+            miniBoardCtx.clearRect(0, 0, miniBoardCanvas.width, miniBoardCanvas.height);
+            miniBoardIdEl.textContent = "Click a node";
+            
+            // Draw default empty grid
+            miniBoardCtx.strokeStyle = '#ddd';
+            miniBoardCtx.lineWidth = 0.5;
+            for (let x = 0; x <= COLS; x++) {
+                const xPos = x * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(xPos, 0);
+                miniBoardCtx.lineTo(xPos, miniBoardCanvas.height);
+                miniBoardCtx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                const yPos = y * MINI_GRID_SIZE;
+                miniBoardCtx.beginPath();
+                miniBoardCtx.moveTo(0, yPos);
+                miniBoardCtx.lineTo(miniBoardCanvas.width, yPos);
+                miniBoardCtx.stroke();
+            }
+        }
+
+
+        // --- New function to set the board from a state string ---
+        function setBoardFromState(stateStr) {
+            if (!stateStr) return;
+            
+            const newBlocks = parseStateString(stateStr); // Use helper
+
+            // Only update if parser was successful
+            if (newBlocks.length > 0 || stateStr === "") {
+                boardBlocks = newBlocks; // Replace the main board
+                selectedGameBlock = null; // Deselect any block
+                redrawCanvas(); // Update the visual board
+            }
+        }
+
+        function findAllPossibleMoves(blocks) {
+            const neighborStates = new Set();
+            for (let i = 0; i < blocks.length; i++) {
+                const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                for (const [dx, dy] of directions) {
+                    const newBlocks = JSON.parse(JSON.stringify(blocks));
+                    const newBlock = newBlocks[i];
+                    let moved = false;
+                    
+                    if (newBlock.id === 4) { // 1x1 block
+                        // Try 2-space move (JUMP)
+                        const iX = newBlock.x + dx, iY = newBlock.y + dy, tX = newBlock.x + dx * 2, tY = newBlock.y + dy * 2;
+                        if (tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
+                            isOccupied(newBlocks, iX, iY, newBlock, newBlock) &&  // <-- FIX: Check if intermediate is OCCUPIED
+                            !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) { // <-- Check if target is EMPTY
+                            newBlock.x = tX; newBlock.y = tY; moved = true;
+                        } else {
+                            // Try 1-space move
+                            const tX1 = newBlock.x + dx, tY1 = newBlock.y + dy;
+                            if (tX1 >= 0 && tX1 + 1 <= COLS && tY1 >= 0 && tY1 + 1 <= ROWS && 
+                                !isOccupied(newBlocks, tX1, tY1, newBlock, newBlock)) {
+                                newBlock.x = tX1; newBlock.y = tY1; moved = true;
+                            }
+                        }
+                    } else if (newBlock.id === 2 || newBlock.id === 3) { // 1x2, 2x1 blocks
+                        // 1-space move
+                        // Restrict 1x2 and 2x1 blocks
+                        if ((newBlock.id === 3 && dy !== 0) || (newBlock.id === 2 && dx !== 0)) continue;
+                        
+                        const tX = newBlock.x + dx, tY = newBlock.y + dy;
+                        if (tX >= 0 && tX + newBlock.w <= COLS && tY >= 0 && tY + newBlock.h <= ROWS && !isOccupied(newBlocks, tX, tY, newBlock, newBlock)) {
+                            newBlock.x = tX; newBlock.y = tY; moved = true;
+                        }
+                    }
+                    if (moved) neighborStates.add(generateStateString(newBlocks));
+                }
+            }
+            return neighborStates;
+        }
+
+        // --- New CSV Export Function ---
+        function exportToCsv() {
+            // 1. Find the maximum number of neighbors
+            let maxNeighbors = 0;
+            stateGraph.forEach(data => {
+                if (data.neighbors.size > maxNeighbors) {
+                    maxNeighbors = data.neighbors.size;
+                }
+            });
+
+            // 2. Create the header row
+            let csvContent = "State";
+            for (let i = 1; i <= maxNeighbors; i++) {
+                csvContent += `,Neighbor_${i}`;
+            }
+            csvContent += "\n";
+
+            // 3. Create the data rows
+            stateGraph.forEach((data, state) => {
+                const safeState = `"${state.replace(/"/g, '""')}"`; // Escape quotes for the state
+                let row = safeState;
+                
+                const neighbors = Array.from(data.neighbors).sort(); // Get sorted neighbors
+                
+                for (let i = 0; i < maxNeighbors; i++) {
+                    if (i < neighbors.length) {
+                        const safeNeighbor = `"${neighbors[i].replace(/"/g, '""')}"`;
+                        row += `,${safeNeighbor}`;
+                    } else {
+                        row += `,""`; // Add empty column if no more neighbors
+                    }
+                }
+                csvContent += row + "\n";
+            });
+
+            // Create download link
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "klotski_state_graph.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function createPalette() {
+            blockTypes.forEach(type => {
+                const blockDiv = document.createElement('div');
+                blockDiv.className = 'palette-block';
+                blockDiv.style.width = `${type.w * 30}px`; blockDiv.style.height = `${type.h * 30}px`;
+                blockDiv.style.backgroundColor = type.color;
+                blockDiv.addEventListener('click', () => {
+                    document.querySelectorAll('.palette-block').forEach(b => b.classList.remove('selected'));
+                    blockDiv.classList.add('selected');
+                    selectedPaletteBlock = type; canvas.style.cursor = 'copy';
+                });
+                paletteContainer.appendChild(blockDiv);
+            });
+        }
+
+        function handleMove(dx, dy) {
+            if (!selectedGameBlock) return;
+            const originalState = generateStateString(boardBlocks);
+            const blockIndex = boardBlocks.indexOf(selectedGameBlock);
+            let moved = false;
+            
+            const tempBlocks = JSON.parse(JSON.stringify(boardBlocks));
+            const blockToMove = tempBlocks[blockIndex];
+
+            if (blockToMove.id === 4) { // 1x1 block
+                // Try 2-space move (JUMP)
+                const iX = blockToMove.x + dx, iY = blockToMove.y + dy, tX = blockToMove.x + dx*2, tY = blockToMove.y+dy*2;
+                 if(tX >= 0 && tX + 1 <= COLS && tY >= 0 && tY + 1 <= ROWS && 
+                    isOccupied(boardBlocks, iX, iY, boardBlocks[blockIndex], boardBlocks[blockIndex]) &&  // <-- FIX: Check if intermediate is OCCUPIED
+                    !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) { // <-- Check if target is EMPTY
+                     boardBlocks[blockIndex].x = tX; boardBlocks[blockIndex].y = tY; moved = true;
+                 } else {
+                    // Try 1-space move
+                    const tX1 = blockToMove.x + dx, tY1 = blockToMove.y + dy;
+                    if(tX1 >= 0 && tX1 + 1 <= COLS && tY1 >= 0 && tY1 + 1 <= ROWS && 
+                        !isOccupied(boardBlocks, tX1, tY1, boardBlocks[blockIndex], boardBlocks[blockIndex])) {
+                         boardBlocks[blockIndex].x = tX1; boardBlocks[blockIndex].y = tY1; moved = true;
+                    }
+                 }
+            } else if (blockToMove.id === 2 || blockToMove.id === 3) { // 1x2, 2x1 blocks
+                // 1-space move
+                // Restrict 1x2 and 2x1 blocks
+                if ((blockToMove.id === 3 && dy !== 0) || (blockToMove.id === 2 && dx !== 0)) return;
+
+                const tX = blockToMove.x + dx, tY = blockToMove.y + dy;
+                if(tX >= 0 && tX + blockToMove.w <= COLS && tY >= 0 && tY + blockToMove.h <= ROWS && !isOccupied(boardBlocks, tX, tY, boardBlocks[blockIndex], boardBlocks[blockIndex])) {
+                     boardBlocks[blockIndex].x = tX; boardBlocks[blockIndex].y = tY; moved = true;
+                }
+            }
+            if (moved) {
+                redrawCanvas();
+                const newState = recordState(boardBlocks);
+                // Don't auto-find neighbors, just record the state
+                if (!stateGraph.get(originalState).neighbors.has(newState)) {
+                    // Manually find neighbors for *just these two states*
+                    if (!stateGraph.get(newState).neighbors || stateGraph.get(newState).neighbors.size === 0) {
+                        stateGraph.get(newState).neighbors = findAllPossibleMoves(boardBlocks);
+                    }
+                    stateGraph.get(originalState).neighbors.add(newState);
+                }
+                highlightedState = newState; // Highlight the new state you moved to
+                updateStateDisplay();
+                updateButtonStates(); // Update buttons since graph exists now
+            }
+        }
+
+        // --- Event Handlers ---
+        playButton.addEventListener('click', () => {
+            isGameMode = !isGameMode;
+            selectedGameBlock = null;
+            if (isGameMode) {
+                playButton.textContent = 'Back to Designer'; playButton.classList.add('game-mode');
+                paletteContainer.style.display = 'none'; 
+                // Hide building blocks title
+                document.querySelector('#designer-container h4').style.display = 'none';
+                designerInstructions.style.display = 'none';
+                gameInstructions.style.display = 'block'; canvas.style.cursor = 'pointer'; canvas.focus();
+                clearStateSpace();
+                const initialState = recordState(boardBlocks);
+                stateGraph.get(initialState).neighbors = findAllPossibleMoves(boardBlocks);
+                highlightedState = initialState; // Highlight the starting state
+                updateStateDisplay();
+            } else {
+                playButton.textContent = 'Play'; playButton.classList.remove('game-mode');
+                paletteContainer.style.display = 'flex'; 
+                // Show building blocks title
+                document.querySelector('#designer-container h4').style.display = 'block';
+                designerInstructions.style.display = 'block';
+                gameInstructions.style.display = 'none'; canvas.style.cursor = 'default';
+                selectedPaletteBlock = null;
+                document.querySelectorAll('.palette-block').forEach(b => b.classList.remove('selected'));
+            }
+            updateButtonStates(); redrawCanvas();
+        });
+        
+        findAllStatesButton.addEventListener('click', async () => {
+            if (stopExploration) { // If it's already running, stop it
+                stopExploration = false;
+                findAllStatesButton.textContent = 'Find All States';
+                findAllStatesButton.classList.remove('exploring');
+                updateButtonStates();
+                return;
+            }
+            
+            stopExploration = true; // Set flag to allow loop to be stopped
+            allStatesFound = false; // Reset flag
+            findAllStatesButton.textContent = 'Stop Exploring';
+            findAllStatesButton.classList.add('exploring');
+            updateButtonStates(); // Disable other buttons
+
+            const queue = [generateStateString(boardBlocks)];
+            const visited = new Set(queue);
+            // Ensure the starting state is in the graph
+            if (!stateGraph.has(queue[0])) {
+                recordState(boardBlocks);
+            }
+
+            while (queue.length > 0) {
+                if (!stopExploration) break; // Check flag at start of loop
+
+                const currentStr = queue.shift();
+                
+                // Safety check for malformed string
+                if (!currentStr || currentStr.trim() === '') continue;
+
+                const currentBlocks = parseStateString(currentStr); // <-- Use new helper
+                
+                // Safety check: if parser fails, it returns empty array
+                if (currentBlocks.length === 0 && currentStr !== "") {
+                    console.warn("Parser returned no blocks for state:", currentStr);
+                    continue; // Skip this bad state
+                }
+
+                const neighbors = findAllPossibleMoves(currentBlocks);
+                stateGraph.set(currentStr, { neighbors });
+                for (const neighbor of neighbors) if (!visited.has(neighbor)) { visited.add(neighbor); queue.push(neighbor); }
+                
+                if (queue.length % 50 === 0) { // Update UI periodically, not every loop
+                    updateStateDisplay();
+                    await new Promise(r => setTimeout(r, 0)); // Yield to browser
+                }
+            }
+
+            // Exploration finished or was stopped
+            if (stopExploration) { // Only set if loop completed naturally
+                 allStatesFound = true;
+            }
+            stopExploration = false;
+            findAllStatesButton.textContent = 'Find All States';
+            findAllStatesButton.classList.remove('exploring');
+            updateStateDisplay(); // Final UI update
+            updateButtonStates(); // Re-enable other buttons
+        });
+
+        // Add listener for new toggle button
+        toggleNeighborsButton.addEventListener('click', () => {
+            neighborsVisible = !neighborsVisible;
+            if (neighborsVisible) {
+                neighborListContainer.style.display = 'block';
+                toggleNeighborsButton.textContent = 'Hide Neighbors';
+            } else {
+                neighborListContainer.style.display = 'none';
+                toggleNeighborsButton.textContent = 'Show Neighbors';
+            }
+        });
+
+        visualizeButton.addEventListener('click', () => {
+            if (stateGraph.size === 0) return;
+            currentGraphRotation = 0; // Reset rotation on open
+            isAutoRotating = false; // Reset auto-rotate on open
+            graphModal.style.display = 'flex';
+            drawStateGraph();
+            graphSvg.focus(); // Focus the SVG to capture key events
+        });
+        exportCsvButton.addEventListener('click', exportToCsv);
+        clearStatesButton.addEventListener('click', clearStateSpace);
+
+        closeModal.addEventListener('click', () => { 
+            graphModal.style.display = 'none'; 
+            if (rotationAnimationId) {
+                cancelAnimationFrame(rotationAnimationId);
+                rotationAnimationId = null;
+            }
+            isAutoRotating = false;
+        });
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const gridX = Math.floor((event.clientX - rect.left) / GRID_SIZE);
+            const gridY = Math.floor((event.clientY - rect.top) / GRID_SIZE);
+            if (isGameMode) {
+                selectedGameBlock = boardBlocks.find(b => gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h) || null;
+                redrawCanvas(); // Redraw to show selection
+            } else {
+                if (!selectedPaletteBlock || gridX + selectedPaletteBlock.w > COLS || gridY + selectedPaletteBlock.h > ROWS || isOccupied(boardBlocks, gridX, gridY, selectedPaletteBlock, null)) return;
+                boardBlocks.push({ x: gridX, y: gridY, ...selectedPaletteBlock });
+                clearStateSpace();
+                updateButtonStates();
+                redrawCanvas();
+            }
+        });
+        canvas.addEventListener('contextmenu', (event) => {
+            if (isGameMode) return;
+            event.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const gridX = Math.floor((event.clientX - rect.left) / GRID_SIZE);
+            const gridY = Math.floor((event.clientY - rect.top) / GRID_SIZE);
+            boardBlocks = boardBlocks.filter(b => !(gridX >= b.x && gridX < b.x + b.w && gridY >= b.y && gridY < b.y + b.h));
+            clearStateSpace(); updateButtonStates(); redrawCanvas();
+        });
+        canvas.addEventListener('keydown', (event) => {
+            if (!isGameMode) return;
+            event.preventDefault(); 
+            const moveMap = {'w':'Up', 'ArrowUp':'Up', 'a':'Left', 'ArrowLeft':'Left', 's':'Down', 'ArrowDown':'Down', 'd':'Right', 'ArrowRight':'Right'};
+            const move = { Up: [0, -1], Down: [0, 1], Left: [-1, 0], Right: [1, 0] }[moveMap[event.key]];
+            if (move) handleMove(...move);
+        });
+        clearButton.addEventListener('click', () => {
+            boardBlocks = []; selectedGameBlock = null;
+            clearStateSpace(); updateButtonStates(); redrawCanvas();
+        });
+        
+        function drawStateGraph() {
+            // 1. Prepare data for D3
+            const nodes = Array.from(stateGraph.keys()).map(id => {
+                const neighbors = stateGraph.get(id)?.neighbors;
+                return { 
+                    id, 
+                    degree: neighbors ? neighbors.size : 0 // Calculate degree (neighbor count)
+                };
+            });
+            const links = [];
+            stateGraph.forEach((data, source) => {
+                data.neighbors.forEach(target => {
+                    // Only add links one way to avoid duplicates if graph is undirected
+                    if (source < target) {
+                        links.push({ source, target });
+                    }
+                });
+            });
+
+            // 2. Find min/max degree for color scale
+            const minDegree = d3.min(nodes, d => d.degree);
+            const maxDegree = d3.max(nodes, d => d.degree);
+
+            // 3. Create a color scale (e.g., light blue to dark blue)
+            let colorScale;
+            if (minDegree === maxDegree) {
+                // Handle case where all nodes have same degree
+                colorScale = () => d3.interpolateBlues(0.5);
+            } else {
+                colorScale = d3.scaleSequential(d3.interpolateBlues).domain([minDegree, maxDegree]);
+            }
+
+            const svg = d3.select("#graph-svg");
+            svg.selectAll("*").remove();
+            
+            // Clear the mini-board display
+            clearMiniBoard();
+
+            // --- Add state variables for node navigation ---
+            let selectedNodeData = null;
+            let selectedNeighborIndex = 0;
+
+            const width = svg.node().getBoundingClientRect().width;
+            const height = svg.node().getBoundingClientRect().height;
+
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(50))
+                .force("charge", d3.forceManyBody().strength(-150))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+            
+            const g = svg.append("g");
+
+            const link = g.append("g").attr("stroke", "#999").attr("stroke-opacity", 0.6)
+                .selectAll("line").data(links).join("line").attr("stroke-width", 1.5);
+
+            const node = g.append("g").attr("stroke", "#333").attr("stroke-width", 1.5) // <-- FIX: Set dark outline
+                .selectAll("circle").data(nodes).join("circle")
+                .attr("class", "node") // Add a class for selection
+                .attr("r", 8) 
+                .attr("fill", d => colorScale(d.degree)); // <-- Apply color scale
+            
+            node.append("title").text(d => `${d.id}\nNeighbors: ${d.degree}`); // Add degree to tooltip
+            
+            // Add click event to nodes
+            node.on("click", nodeClicked);
+            
+            node.call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
+
+            simulation.on("tick", () => {
+                link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                node.attr("cx", d => d.x).attr("cy", d => d.y);
+            });
+            
+            // --- Shared rotation logic ---
+            function applyCurrentTransform() {
+                const transform = d3.zoomTransform(svg.node());
+                g.attr("transform", `${transform} rotate(${currentGraphRotation}, ${width/2}, ${height/2})`);
+            }
+            
+            function setRotation(angleDelta) {
+                currentGraphRotation += angleDelta;
+                applyCurrentTransform();
+            }
+
+            // --- Auto-Rotation Logic ---
+            const toggleRotateBtn = d3.select("#toggle-rotate-btn");
+            let rotationSpeed = 0.05; // Will be set to 0.05 or -0.05
+            
+            function autoRotateLoop() {
+                if (!isAutoRotating) return; // Stop if flag is false
+                currentGraphRotation = (currentGraphRotation + rotationSpeed) % 360; // Use the speed variable
+                applyCurrentTransform();
+                rotationAnimationId = requestAnimationFrame(autoRotateLoop);
+            }
+
+            function startAutoRotate() {
+                isAutoRotating = true;
+                rotationSpeed = Math.random() < 0.5 ? 0.05 : -0.05; // Randomly set direction
+                toggleRotateBtn.classed("active", true).text("Stop Rotate");
+                if (rotationAnimationId) cancelAnimationFrame(rotationAnimationId); // Clear any old loop
+                autoRotateLoop();
+            }
+
+            function stopAutoRotate() {
+                isAutoRotating = false;
+                toggleRotateBtn.classed("active", false).text("Auto-Rotate");
+                if (rotationAnimationId) {
+                    cancelAnimationFrame(rotationAnimationId);
+                    rotationAnimationId = null;
+                }
+            }
+            
+            // Set initial state of button
+            stopAutoRotate(); 
+
+            toggleRotateBtn.on("click", () => {
+                if (isAutoRotating) {
+                    stopAutoRotate();
+                } else {
+                    startAutoRotate();
+                }
+                svg.node().focus(); // Keep focus
+            });
+
+            // --- Zoom Logic ---
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 8]) // Min/max zoom levels
+                .on("zoom", zoomed);
+            
+            // Add background click to clear selection
+            svg.call(zoom)
+               .on("click", () => {
+                    node.classed("selected", false);
+                    clearMiniBoard(); // Clear the mini board on background click
+                    selectedNodeData = null; // Clear selected node data
+                    selectedNeighborIndex = 0;
+               });
+
+            function zoomed(event) {
+                stopAutoRotate(); // Stop auto-rotate on manual zoom/pan
+                // Apply the zoom transform AND the current rotation
+                g.attr("transform", `${event.transform} rotate(${currentGraphRotation}, ${width/2}, ${height/2})`);
+            }
+
+            // --- Drag Logic ---
+            function dragstarted(event, d) {
+                stopAutoRotate(); // Stop auto-rotate on manual drag
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x; d.fy = d.y;
+            }
+            function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null; d.fy = null;
+            }
+
+            // --- New Node Click Logic ---
+            function nodeClicked(event, d) {
+                event.stopPropagation(); // Stop click from bubbling up to SVG
+                
+                // 1. Highlight this node in the graph
+                node.classed("selected", false);
+                // Find the actual DOM element corresponding to data 'd'
+                const thisNodeElement = node.filter(nd => nd.id === d.id).node();
+                d3.select(thisNodeElement).classed("selected", true);
+                
+                // 2. Update the floating window
+                drawMiniBoard(d.id);
+
+                // 3. Update the main game board in the background
+                setBoardFromState(d.id);
+                highlightedState = d.id;
+                
+                // 4. Update state for keyboard navigation
+                selectedNodeData = d;
+                selectedNeighborIndex = 0; // Reset neighbor index on new node click
+
+                updateStateDisplay(); // This updates the list *behind* the modal
+            }
+
+            // --- Manual Rotation Logic ---
+            // Keyboard
+            svg.on("keydown", (event) => {
+                event.preventDefault();
+                
+                // NEW LOGIC: Navigate neighbors
+                if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                    if (!selectedNodeData) return; // Nothing selected
+                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                    if (neighbors.length === 0) return; // No neighbors
+                    
+                    // Decrement index and wrap around
+                    selectedNeighborIndex = (selectedNeighborIndex - 1 + neighbors.length) % neighbors.length;
+                    const newNeighborId = neighbors[selectedNeighborIndex];
+                    
+                    // Programmatically "click" the new node
+                    const newNodeData = nodes.find(n => n.id === newNeighborId);
+                    if (newNodeData) {
+                        nodeClicked(new Event('synthetic'), newNodeData);
+                    }
+
+                } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                    if (!selectedNodeData) return; // Nothing selected
+                    const neighbors = Array.from(stateGraph.get(selectedNodeData.id).neighbors).sort();
+                    if (neighbors.length === 0) return; // No neighbors
+
+                    // Increment index and wrap around
+                    selectedNeighborIndex = (selectedNeighborIndex + 1) % neighbors.length;
+                    const newNeighborId = neighbors[selectedNeighborIndex];
+                    
+                    // Programmatically "click" the new node
+                    const newNodeData = nodes.find(n => n.id === newNeighborId);
+                    if (newNodeData) {
+                        nodeClicked(new Event('synthetic'), newNodeData);
+                    }
+                }
+            });
+
+            // On-screen Buttons
+            d3.select("#rotate-left-btn").on("click", () => {
+                stopAutoRotate();
+                setRotation(-5);
+                svg.node().focus(); // Keep focus on SVG for keyboard events
+            });
+            d3.select("#rotate-right-btn").on("click", () => {
+                stopAutoRotate();
+                setRotation(5);
+                svg.node().focus(); // Keep focus on SVG for keyboard events
+            });
+        }
+
+        // --- Initial Setup ---
+        createPalette();
+        redrawCanvas();
+        updateButtonStates();
+    </script>
+</body>
+</html>
+
+
