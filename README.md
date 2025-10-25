@@ -29,7 +29,7 @@ First, pick blocks and put them on the board. Unlike the real game, the blue 1x2
 Select and use WASD/Arrow keys to move all the blocks around. The state space panel will record all the unquic position(s) the blocks visited, i.e. the state space.
 The "Find All States" button will do it automatically.
 
-![](/../main/graphs/state_space_mapping.png)
+![](/../main/graphs/One_block_state_space.png)
 
 ### 3) Visualize the state space networks:
 
